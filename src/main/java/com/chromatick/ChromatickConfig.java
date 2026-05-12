@@ -1,0 +1,421 @@
+package com.chromatick;
+
+import java.awt.Color;
+import net.runelite.client.config.Alpha;
+import net.runelite.client.config.Config;
+import net.runelite.client.config.ConfigGroup;
+import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
+import net.runelite.client.config.Range;
+
+@ConfigGroup("chromatick")
+public interface ChromatickConfig extends Config
+{
+	// ─── Tick Cycle Settings ─────────────────────────────────────────────
+
+	@ConfigItem(keyName = "staticMode", name = "", description = "", hidden = true)
+	default boolean staticMode()
+	{
+		return false;
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 1,
+		keyName = "staticColor",
+		name = "Static Border Color",
+		description = "True tile border color used in static mode."
+	)
+	default Color staticColor()
+	{
+		return new Color(0, 255, 0, 128);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 2,
+		keyName = "staticFillColor",
+		name = "Static Fill Color",
+		description = "True tile fill color used in static mode (alpha controls opacity). " +
+			"Only applies when Fill Color is enabled in the True Tile section."
+	)
+	default Color staticFillColor()
+	{
+		return new Color(0, 255, 0, 0);
+	}
+
+	@Range(min = 2, max = 10)
+	@ConfigItem(
+		position = 3,
+		keyName = "cycleLength",
+		name = "Tick Cycle Length",
+		description = "Number of ticks per color cycle (default). Color changes every tick. " +
+			"Set to 4 for a 4-tick weapon, 6 for a 6-tick, etc. " +
+			"Cycle hotkeys override this in-session without updating this slider; " +
+			"Reset Cycle restores it."
+	)
+	default int cycleLength()
+	{
+		return 4;
+	}
+
+	@ConfigItem(
+		position = 4,
+		keyName = "usePreattentivePalette",
+		name = "Use Preattentive Palette",
+		description = "Use the built-in perceptually-distinct palette optimized for " +
+			"pop-out effect. Disable to use your own custom colors."
+	)
+	default boolean usePreattentivePalette()
+	{
+		return true;
+	}
+
+	// ─── Tile Overlay ─────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "True Tile",
+		description = "Configure how the true tile overlay looks",
+		position = 5
+	)
+	String tileSettings = "tileSettings";
+
+	@Range(min = 1, max = 5)
+	@ConfigItem(
+		position = 1,
+		keyName = "tileBorderWidth",
+		name = "Border Width",
+		description = "Border thickness of the true tile",
+		section = "tileSettings"
+	)
+	default double tileBorderWidth()
+	{
+		return 2;
+	}
+
+	@ConfigItem(
+		position = 2,
+		keyName = "enableFillColor",
+		name = "Enable Fill Color",
+		description = "Fill the true tile interior with color. " +
+			"In cycle mode, uses the cycle color at the opacity set below. " +
+			"In static mode, uses Static Fill Color.",
+		section = "tileSettings"
+	)
+	default boolean enableFillColor()
+	{
+		return true;
+	}
+
+	@Range(min = 0, max = 255)
+	@ConfigItem(
+		position = 3,
+		keyName = "fillOpacity",
+		name = "Fill Opacity",
+		description = "Opacity of the true tile fill in cycle mode (0 = transparent, 255 = solid). " +
+			"In static mode, opacity is controlled by the alpha of Static Fill Color.",
+		section = "tileSettings"
+	)
+	default int fillOpacity()
+	{
+		return 50;
+	}
+
+	@ConfigItem(
+		position = 4,
+		keyName = "drawBelowPlayer",
+		name = "Draw Below Player",
+		description = "Erase the tile from under the player model so it appears behind them. " +
+			"Requires GPU rendering mode (enable in RuneLite settings). " +
+			"Adapted from LeikvollE's Improved Tile Indicators.",
+		section = "tileSettings"
+	)
+	default boolean drawBelowPlayer()
+	{
+		return false;
+	}
+
+	// ─── Hotkeys ──────────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "Hotkeys",
+		description = "Hotkeys for controlling the tick overlay during gameplay",
+		position = 6
+	)
+	String hotkeySettings = "hotkeySettings";
+
+	@ConfigItem(
+		position = 1,
+		keyName = "toggleOverlayHotkey",
+		name = "Toggle Static / Cycle",
+		description = "Switch between static color mode and cycling mode. " +
+			"The tile stays visible either way.",
+		section = "hotkeySettings"
+	)
+	default Keybind toggleOverlayHotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 2,
+		keyName = "resetCycleHotkey",
+		name = "Reset Cycle",
+		description = "Reset the tick cycle to position 0 and clear any hotkey override",
+		section = "hotkeySettings"
+	)
+	default Keybind resetCycleHotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 3,
+		keyName = "cycle2Hotkey",
+		name = "2-Tick Cycle",
+		description = "Switch to a 2-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle2Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 4,
+		keyName = "cycle3Hotkey",
+		name = "3-Tick Cycle",
+		description = "Switch to a 3-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle3Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 5,
+		keyName = "cycle4Hotkey",
+		name = "4-Tick Cycle",
+		description = "Switch to a 4-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle4Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 6,
+		keyName = "cycle5Hotkey",
+		name = "5-Tick Cycle",
+		description = "Switch to a 5-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle5Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 7,
+		keyName = "cycle6Hotkey",
+		name = "6-Tick Cycle",
+		description = "Switch to a 6-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle6Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 8,
+		keyName = "cycle7Hotkey",
+		name = "7-Tick Cycle",
+		description = "Switch to a 7-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle7Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 9,
+		keyName = "cycle8Hotkey",
+		name = "8-Tick Cycle",
+		description = "Switch to an 8-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle8Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 10,
+		keyName = "cycle9Hotkey",
+		name = "9-Tick Cycle",
+		description = "Switch to a 9-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle9Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 11,
+		keyName = "cycle10Hotkey",
+		name = "10-Tick Cycle",
+		description = "Switch to a 10-tick cycle",
+		section = "hotkeySettings"
+	)
+	default Keybind cycle10Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	// ─── Custom Colors ────────────────────────────────────────────────────
+	// Only used when "Use Preattentive Palette" is disabled.
+
+	@ConfigSection(
+		name = "Custom Colors",
+		description = "Custom colors to cycle through (only used when preattentive palette is disabled)",
+		position = 7,
+		closedByDefault = true
+	)
+	String colorSettings = "colorSettings";
+
+	@Alpha
+	@ConfigItem(
+		position = 1,
+		keyName = "color1",
+		name = "Color 1",
+		description = "First color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color1()
+	{
+		return new Color(0, 200, 83);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 2,
+		keyName = "color2",
+		name = "Color 2",
+		description = "Second color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color2()
+	{
+		return new Color(41, 121, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 3,
+		keyName = "color3",
+		name = "Color 3",
+		description = "Third color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color3()
+	{
+		return new Color(255, 196, 0);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 4,
+		keyName = "color4",
+		name = "Color 4",
+		description = "Fourth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color4()
+	{
+		return new Color(213, 0, 0);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 5,
+		keyName = "color5",
+		name = "Color 5",
+		description = "Fifth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color5()
+	{
+		return new Color(170, 0, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 6,
+		keyName = "color6",
+		name = "Color 6",
+		description = "Sixth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color6()
+	{
+		return new Color(0, 229, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 7,
+		keyName = "color7",
+		name = "Color 7",
+		description = "Seventh color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color7()
+	{
+		return new Color(255, 109, 0);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 8,
+		keyName = "color8",
+		name = "Color 8",
+		description = "Eighth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color8()
+	{
+		return new Color(255, 255, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 9,
+		keyName = "color9",
+		name = "Color 9",
+		description = "Ninth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color9()
+	{
+		return new Color(160, 64, 255);
+	}
+
+	@Alpha
+	@ConfigItem(
+		position = 10,
+		keyName = "color10",
+		name = "Color 10",
+		description = "Tenth color in the cycle",
+		section = "colorSettings"
+	)
+	default Color color10()
+	{
+		return new Color(224, 64, 192);
+	}
+}
