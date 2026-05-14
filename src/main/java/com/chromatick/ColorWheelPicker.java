@@ -1,108 +1,88 @@
 package com.chromatick;
 
-import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.LinearGradientPaint;
-import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import javax.swing.JPanel;
 
 /**
- * HSV color wheel: a continuous hue ring around the outside, with a
- * saturation/value square inside. Click or drag in either region to pick.
- * Listeners are notified continuously while dragging.
+ * Discrete 12-hue × 3-ring colour wheel. Fills its entire component area — set
+ * the preferred/maximum size from outside to control dimensions. The wheel is
+ * always circular and centred; it uses the smaller of width/height as its
+ * diameter so it adapts to any square or rectangular bounds.
+ *
+ * Geometry: uniform 30° wedges with a 2° visual gap, three concentric rings of
+ * equal radial width separated by 2 px gaps, hub radius = 1 px.
  */
 class ColorWheelPicker extends JPanel
 {
-	private static final int SIZE = 184;
-	private static final int RING_THICKNESS = 18;
-	private static final int RING_GAP = 4;
+	private static final int     HUES   = 12;
+	private static final float   LINE_W = 2f;
 
-	private float hue = 0f;
-	private float saturation = 1f;
-	private float value = 1f;
+	// (saturation %, lightness %) per ring, outer → inner
+	private static final int[][] RINGS  = {
+		{90, 50},
+		{80, 66},
+		{70, 82},
+	};
 
-	private BufferedImage ringCache;
-	private BufferedImage squareCache;
-	private float cachedHue = -1f;
+	// Precomputed colours: cells[ring][hue]
+	private final Color[][] cells = new Color[RINGS.length][HUES];
 
-	private enum DragTarget { NONE, RING, SQUARE }
+	private int selRing = -1;
+	private int selHue  = -1;
 
-	private DragTarget activeDrag = DragTarget.NONE;
-
-	private final List<Consumer<Color>> listeners = new ArrayList<>();
-	private final List<Runnable> commitListeners = new ArrayList<>();
+	private final List<Consumer<Color>> listeners      = new ArrayList<>();
+	private final List<Runnable>        commitListeners = new ArrayList<>();
 
 	ColorWheelPicker()
 	{
-		setPreferredSize(new Dimension(SIZE, SIZE));
-		setOpaque(false);
-		setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+		for (int r = 0; r < RINGS.length; r++)
+		{
+			for (int h = 0; h < HUES; h++)
+			{
+				cells[r][h] = DiscretePalette.fromHSL(h * 30, RINGS[r][0], RINGS[r][1]);
+			}
+		}
 
-		MouseAdapter mouse = new MouseAdapter()
+		// Preferred is a hint; CardLayout stretches it to fill the container.
+		setPreferredSize(new Dimension(212, 212));
+		setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+		setOpaque(false);
+		setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mousePressed(MouseEvent e)
 			{
-				Point center = center();
-				int dx = e.getX() - center.x;
-				int dy = e.getY() - center.y;
-				double dist = Math.sqrt(dx * dx + dy * dy);
-				double outer = SIZE / 2.0;
-				double inner = outer - RING_THICKNESS;
-				double squareHalf = (inner - RING_GAP) / Math.sqrt(2);
-
-				if (dist <= outer && dist >= inner)
+				int[] cell = hitTest(e.getX(), e.getY());
+				if (cell != null)
 				{
-					activeDrag = DragTarget.RING;
-					updateFromRing(e.getX(), e.getY());
-				}
-				else if (Math.abs(dx) <= squareHalf && Math.abs(dy) <= squareHalf)
-				{
-					activeDrag = DragTarget.SQUARE;
-					updateFromSquare(e.getX(), e.getY());
-				}
-			}
-
-			@Override
-			public void mouseDragged(MouseEvent e)
-			{
-				if (activeDrag == DragTarget.RING)
-				{
-					updateFromRing(e.getX(), e.getY());
-				}
-				else if (activeDrag == DragTarget.SQUARE)
-				{
-					updateFromSquare(e.getX(), e.getY());
-				}
-			}
-
-			@Override
-			public void mouseReleased(MouseEvent e)
-			{
-				if (activeDrag != DragTarget.NONE)
-				{
-					activeDrag = DragTarget.NONE;
+					selRing = cell[0];
+					selHue  = cell[1];
+					repaint();
+					Color c = cells[selRing][selHue];
+					for (Consumer<Color> l : listeners)
+					{
+						l.accept(c);
+					}
 					for (Runnable r : commitListeners)
 					{
 						r.run();
 					}
 				}
 			}
-		};
-		addMouseListener(mouse);
-		addMouseMotionListener(mouse);
+		});
 	}
 
 	void addColorListener(Consumer<Color> l)
@@ -115,169 +95,174 @@ class ColorWheelPicker extends JPanel
 		commitListeners.add(r);
 	}
 
-	/** Set the wheel's selection without firing listeners. */
 	void setColorSilent(Color c)
 	{
-		float[] hsv = Color.RGBtoHSB(c.getRed(), c.getGreen(), c.getBlue(), null);
-		hue = hsv[0];
-		saturation = hsv[1];
-		value = hsv[2];
+		int bestR = -1, bestH = -1;
+		double bestDist = Double.MAX_VALUE;
+		for (int r = 0; r < RINGS.length; r++)
+		{
+			for (int h = 0; h < HUES; h++)
+			{
+				int dr = c.getRed()   - cells[r][h].getRed();
+				int dg = c.getGreen() - cells[r][h].getGreen();
+				int db = c.getBlue()  - cells[r][h].getBlue();
+				double d = dr * dr + dg * dg + db * db;
+				if (d < bestDist)
+				{
+					bestDist = d;
+					bestR = r;
+					bestH = h;
+				}
+			}
+		}
+		selRing = bestR;
+		selHue  = bestH;
 		repaint();
 	}
 
 	Color getColor()
 	{
-		return Color.getHSBColor(hue, saturation, value);
-	}
-
-	private Point center()
-	{
-		return new Point(getWidth() / 2, getHeight() / 2);
-	}
-
-	private void updateFromRing(int x, int y)
-	{
-		Point c = center();
-		// Ring is drawn CW from red at 12 o'clock (i=0 → startAngle=89° in Java arc coords).
-		// Map screen-space atan2 to hue with that orientation.
-		double angle = Math.atan2(y - c.y, x - c.x);
-		float newHue = (float) (angle / (2 * Math.PI) + 0.25f);
-		newHue = ((newHue % 1f) + 1f) % 1f;
-		hue = newHue;
-		repaint();
-		fire();
-	}
-
-	private void updateFromSquare(int x, int y)
-	{
-		Point c = center();
-		double outer = SIZE / 2.0;
-		double inner = outer - RING_THICKNESS;
-		double squareHalf = (inner - RING_GAP) / Math.sqrt(2);
-
-		double sx = (x - c.x + squareHalf) / (2 * squareHalf);
-		double sy = (y - c.y + squareHalf) / (2 * squareHalf);
-		sx = Math.max(0, Math.min(1, sx));
-		sy = Math.max(0, Math.min(1, sy));
-
-		saturation = (float) sx;
-		value = (float) (1.0 - sy);
-		repaint();
-		fire();
-	}
-
-	private void fire()
-	{
-		Color c = getColor();
-		for (Consumer<Color> l : listeners)
+		if (selRing < 0)
 		{
-			l.accept(c);
+			return Color.RED;
 		}
+		return cells[selRing][selHue];
 	}
+
+	// ─── Geometry helper ─────────────────────────────────────────────────
+	//   Returns: [cx, cy, outerR, hubR, ringW]
+
+	private float[] geom()
+	{
+		float size   = Math.min(getWidth(), getHeight());
+		float cx     = getWidth()  / 2f;
+		float cy     = getHeight() / 2f;
+		float outerR = size / 2f - 2f;
+		float hubR   = LINE_W / 2f;
+		float ringW  = (outerR - hubR - LINE_W * (RINGS.length - 1)) / RINGS.length;
+		return new float[]{cx, cy, outerR, hubR, ringW};
+	}
+
+	// ─── Hit test ─────────────────────────────────────────────────────────
+
+	private int[] hitTest(int mx, int my)
+	{
+		float[] g     = geom();
+		float   cx    = g[0], cy = g[1], outerR = g[2], hubR = g[3], ringW = g[4];
+		float   dx    = mx - cx;
+		float   dy    = my - cy;
+		float   dist  = (float) Math.sqrt(dx * dx + dy * dy);
+		if (dist < hubR || dist > outerR)
+		{
+			return null;
+		}
+		for (int r = 0; r < RINGS.length; r++)
+		{
+			float ro = outerR - r * (ringW + LINE_W);
+			float ri = ro - ringW;
+			if (dist <= ro && dist >= ri)
+			{
+				double screenDeg = Math.toDegrees(Math.atan2(dy, dx)) + 90;
+				if (screenDeg < 0)
+				{
+					screenDeg += 360;
+				}
+				int h = (int) ((screenDeg + 15) % 360 / 30);
+				if (h >= HUES)
+				{
+					h = HUES - 1;
+				}
+				return new int[]{r, h};
+			}
+		}
+		return null;
+	}
+
+	// ─── Paint ────────────────────────────────────────────────────────────
 
 	@Override
 	protected void paintComponent(Graphics g)
 	{
+		if (getWidth() == 0 || getHeight() == 0)
+		{
+			return;
+		}
+
+		float[] geom  = geom();
+		float   cx    = geom[0], cy = geom[1], outerR = geom[2], hubR = geom[3], ringW = geom[4];
+
 		Graphics2D g2 = (Graphics2D) g.create();
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g2.setRenderingHint(RenderingHints.KEY_RENDERING,    RenderingHints.VALUE_RENDER_QUALITY);
 
-		Point c = center();
-		double outer = SIZE / 2.0;
-		double inner = outer - RING_THICKNESS;
-		double squareHalf = (inner - RING_GAP) / Math.sqrt(2);
+		// Paint rings outer → inner, masking each inner radius after each ring
+		for (int r = 0; r < RINGS.length; r++)
+		{
+			float ro = outerR - r * (ringW + LINE_W);
+			float ri = ro - ringW;
 
-		drawRing(g2, c, outer, inner);
-		drawSquare(g2, c, squareHalf);
-		drawRingIndicator(g2, c, outer, inner);
-		drawSquareIndicator(g2, c, squareHalf);
+			for (int h = 0; h < HUES; h++)
+			{
+				float javaCentre = 90f - h * 30f;
+				float halfArc    = 14f;
+				float startAngle = javaCentre + halfArc;
+				float arcAngle   = -(halfArc * 2f);
+
+				g2.setColor(cells[r][h]);
+				int x = Math.round(cx - ro);
+				int y = Math.round(cy - ro);
+				int d = Math.round(ro * 2);
+				g2.fillArc(x, y, d, d, Math.round(startAngle), Math.round(arcAngle));
+			}
+
+			// Mask inner gap
+			if (ri > hubR)
+			{
+				g2.setColor(getBackground() != null ? getBackground() : new Color(0x242424));
+				int x = Math.round(cx - ri);
+				int y = Math.round(cy - ri);
+				int d = Math.round(ri * 2);
+				g2.fillOval(x, y, d, d);
+			}
+		}
+
+		// Radial spokes
+		Color bgColor = getBackground() != null ? getBackground() : new Color(0x242424);
+		g2.setColor(bgColor);
+		g2.setStroke(new BasicStroke(LINE_W, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+		for (int h = 0; h < HUES; h++)
+		{
+			double b  = Math.toRadians(h * 30.0 - 15.0);
+			float  x1 = cx + hubR   * (float) Math.sin(b);
+			float  y1 = cy - hubR   * (float) Math.cos(b);
+			float  x2 = cx + outerR * (float) Math.sin(b);
+			float  y2 = cy - outerR * (float) Math.cos(b);
+			g2.drawLine(Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2));
+		}
+
+		// Concentric ring separators
+		g2.setStroke(new BasicStroke(LINE_W));
+		for (int r = 0; r < RINGS.length - 1; r++)
+		{
+			float ro   = outerR - r * (ringW + LINE_W);
+			float ri   = ro - ringW;
+			float sepR = ri - LINE_W / 2f;
+			g2.setColor(bgColor);
+			g2.drawOval(Math.round(cx - sepR), Math.round(cy - sepR),
+				Math.round(sepR * 2), Math.round(sepR * 2));
+		}
+
+		// Outer boundary
+		g2.setStroke(new BasicStroke(LINE_W * 2));
+		g2.setColor(bgColor);
+		g2.drawOval(Math.round(cx - outerR), Math.round(cy - outerR),
+			Math.round(outerR * 2), Math.round(outerR * 2));
+
+		// Hub
+		g2.setColor(bgColor);
+		g2.fillOval(Math.round(cx - hubR), Math.round(cy - hubR),
+			Math.round(hubR * 2 + 1), Math.round(hubR * 2 + 1));
 
 		g2.dispose();
-	}
-
-	private void drawRing(Graphics2D g2, Point c, double outer, double inner)
-	{
-		if (ringCache == null)
-		{
-			ringCache = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
-			Graphics2D rg = ringCache.createGraphics();
-			rg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-			int cx = SIZE / 2;
-			int cy = SIZE / 2;
-			// draw thin pie slices around the circle
-			int slices = 360;
-			for (int i = 0; i < slices; i++)
-			{
-				float h = (float) i / slices;
-				rg.setColor(Color.getHSBColor(h, 1f, 1f));
-				// our angle 0 corresponds to top (12 o'clock) — Java arcs start at 3 o'clock and go CCW
-				int startAngle = 90 - (i * 360 / slices) - (360 / slices);
-				int extent = 360 / slices + 1;
-				rg.fillArc(cx - (int) outer, cy - (int) outer, (int) (outer * 2), (int) (outer * 2),
-					startAngle, extent);
-			}
-			rg.setComposite(AlphaComposite.Clear);
-			rg.fillOval(cx - (int) inner, cy - (int) inner, (int) (inner * 2), (int) (inner * 2));
-			rg.dispose();
-		}
-		g2.drawImage(ringCache, 0, 0, null);
-	}
-
-	private void drawSquare(Graphics2D g2, Point c, double half)
-	{
-		if (squareCache == null || cachedHue != hue)
-		{
-			int side = (int) Math.round(half * 2);
-			squareCache = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
-			Color pure = Color.getHSBColor(hue, 1f, 1f);
-			Graphics2D sg = squareCache.createGraphics();
-			// horizontal: white -> pure hue (saturation)
-			LinearGradientPaint hGrad = new LinearGradientPaint(
-				0, 0, side, 0,
-				new float[]{0f, 1f},
-				new Color[]{Color.WHITE, pure}
-			);
-			sg.setPaint(hGrad);
-			sg.fillRect(0, 0, side, side);
-			// vertical: transparent -> black (value)
-			LinearGradientPaint vGrad = new LinearGradientPaint(
-				0, 0, 0, side,
-				new float[]{0f, 1f},
-				new Color[]{new Color(0, 0, 0, 0), Color.BLACK}
-			);
-			sg.setPaint(vGrad);
-			sg.fillRect(0, 0, side, side);
-			sg.dispose();
-			cachedHue = hue;
-		}
-		int side = squareCache.getWidth();
-		g2.drawImage(squareCache, c.x - side / 2, c.y - side / 2, null);
-	}
-
-	private void drawRingIndicator(Graphics2D g2, Point c, double outer, double inner)
-	{
-		double mid = (outer + inner) / 2.0;
-		double angle = (hue - 0.25f) * 2 * Math.PI;
-		int x = (int) Math.round(c.x + Math.cos(angle) * mid);
-		int y = (int) Math.round(c.y + Math.sin(angle) * mid);
-		int r = (int) Math.round((outer - inner) / 2.0) - 1;
-		g2.setStroke(new BasicStroke(2f));
-		g2.setColor(Color.BLACK);
-		g2.drawOval(x - r, y - r, r * 2, r * 2);
-		g2.setColor(Color.WHITE);
-		g2.drawOval(x - r + 1, y - r + 1, (r - 1) * 2, (r - 1) * 2);
-	}
-
-	private void drawSquareIndicator(Graphics2D g2, Point c, double half)
-	{
-		double sx = saturation * (2 * half) - half;
-		double sy = (1.0 - value) * (2 * half) - half;
-		int x = (int) Math.round(c.x + sx);
-		int y = (int) Math.round(c.y + sy);
-		int r = 5;
-		g2.setStroke(new BasicStroke(2f));
-		g2.setColor(Color.BLACK);
-		g2.drawOval(x - r, y - r, r * 2, r * 2);
-		g2.setColor(Color.WHITE);
-		g2.drawOval(x - r + 1, y - r + 1, (r - 1) * 2, (r - 1) * 2);
 	}
 }

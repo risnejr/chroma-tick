@@ -6,7 +6,6 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -16,52 +15,63 @@ import java.util.function.Consumer;
 import javax.swing.JPanel;
 
 /**
- * Discrete swatch wheel: 12 hue wedges × 3 saturation rings (36 chips) plus a
- * 5-cell grayscale row below. Hues are evenly-stepped HSV; each inner ring
- * reduces saturation toward white. The innermost ring fills the centre — no
- * dead hole. Clicking a chip fires a Color event and commits immediately
- * (no drag). Optimized for rapid sequential picking.
+ * 6-column × 5-row HSL colour grid (30 cells). Row 0 = six neutrals (white→black);
+ * rows 1–4 = six hue columns at four lightness steps. Generated from HSL so the
+ * palette matches the V1+ Refined design spec exactly.
+ *
+ * Clicking any cell fires listeners and commits immediately.
  */
 class DiscretePalette extends JPanel
 {
-	private static final int SIZE = 200;
-	private static final int CX = SIZE / 2;
-	private static final int CY = SIZE / 2;
-	private static final int WEDGES = 12;
-	private static final int GRAY_HEIGHT = 24;
+	private static final int COLS = 6;
+	private static final int ROWS = 5;
+	private static final int CELL_H = 20;
+	private static final int CELL_GAP = 3;
+	private static final int PADDING = 4;
 
-	// Ring boundaries (outermost first). Small radial gaps make the chips read as separate.
-	// The innermost ring extends to the centre (R_INNER[2] = 0) so there is no dead hole.
-	private static final int[] R_OUTER = {96, 68, 40};
-	private static final int[] R_INNER = {72, 44, 0};
-
-	// (S, V) per ring: outer = pure hue; inner rings add white (lower S, V stays high).
-	// Vivid on the rim, fading to near-white at the centre.
-	private static final float[][] RING_SV = {
-		{1.00f, 1.00f},
-		{0.66f, 1.00f},
-		{0.33f, 1.00f},
+	// Row 0: neutral greys, white→black
+	private static final int[] NEUTRAL_RGB = {
+		0xFFFFFF, 0xCCCCCC, 0x999999, 0x666666, 0x333333, 0x000000
 	};
 
-	private static final float WEDGE_DEG = 360f / WEDGES;
-	private static final float WEDGE_GAP_DEG = 2f;
+	// Hue angles (degrees) for the 6 hue columns
+	private static final int[] HUE_ANGLES = {0, 28, 50, 130, 215, 285};
 
-	private static final int[] GRAYS = {16, 80, 144, 200, 240};
+	// (saturation%, lightness%) per row; rows 1–4 go light→dark
+	private static final int[][] HSL_ROWS = {
+		{95, 82},
+		{85, 68},
+		{75, 52},
+		{65, 36},
+	};
 
-	private static Color chipColor(int wedge, int ring)
-	{
-		float hue = (float) (((wedge % WEDGES) + WEDGES) % WEDGES) / WEDGES;
-		float sat = RING_SV[ring][0];
-		float val = RING_SV[ring][1];
-		return Color.getHSBColor(hue, sat, val);
-	}
+	// Precomputed cell colours [row][col]
+	private final Color[][] cells = new Color[ROWS][COLS];
+
+	// Currently highlighted cell (null if none)
+	private Color selected;
 
 	private final List<Consumer<Color>> listeners = new ArrayList<>();
 	private final List<Runnable> commitListeners = new ArrayList<>();
 
 	DiscretePalette()
 	{
-		setPreferredSize(new Dimension(SIZE, SIZE + GRAY_HEIGHT + 6));
+		// Build the colour grid
+		for (int col = 0; col < COLS; col++)
+		{
+			cells[0][col] = new Color(NEUTRAL_RGB[col]);
+		}
+		for (int row = 0; row < HSL_ROWS.length; row++)
+		{
+			for (int col = 0; col < COLS; col++)
+			{
+				cells[row + 1][col] = fromHSL(HUE_ANGLES[col], HSL_ROWS[row][0], HSL_ROWS[row][1]);
+			}
+		}
+
+		int prefH = ROWS * CELL_H + (ROWS - 1) * CELL_GAP + PADDING * 2;
+		setPreferredSize(new Dimension(212, prefH));
+		setMaximumSize(new Dimension(Integer.MAX_VALUE, prefH));
 		setOpaque(false);
 		setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
@@ -70,10 +80,19 @@ class DiscretePalette extends JPanel
 			@Override
 			public void mousePressed(MouseEvent e)
 			{
-				Color picked = hitTest(e.getX(), e.getY());
-				if (picked != null)
+				Color c = hitTest(e.getX(), e.getY());
+				if (c != null)
 				{
-					fire(picked);
+					selected = c;
+					repaint();
+					for (Consumer<Color> l : listeners)
+					{
+						l.accept(c);
+					}
+					for (Runnable r : commitListeners)
+					{
+						r.run();
+					}
 				}
 			}
 		});
@@ -89,64 +108,45 @@ class DiscretePalette extends JPanel
 		commitListeners.add(r);
 	}
 
-	private void fire(Color c)
+	/** Highlight the closest grid cell to c without firing listeners. */
+	void setColorSilent(Color c)
 	{
-		for (Consumer<Color> l : listeners)
+		Color best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (Color[] row : cells)
 		{
-			l.accept(c);
+			for (Color cell : row)
+			{
+				double d = colorDist(c, cell);
+				if (d < bestDist)
+				{
+					bestDist = d;
+					best = cell;
+				}
+			}
 		}
-		for (Runnable r : commitListeners)
-		{
-			r.run();
-		}
+		selected = best;
+		repaint();
 	}
 
-	private Color hitTest(int x, int y)
+	private Color hitTest(int mx, int my)
 	{
-		// Grayscale row?
-		int grayTop = SIZE + 6;
-		if (y >= grayTop && y < grayTop + GRAY_HEIGHT)
-		{
-			int cellW = SIZE / GRAYS.length;
-			int idx = x / cellW;
-			if (idx >= 0 && idx < GRAYS.length)
-			{
-				int v = GRAYS[idx];
-				return new Color(v, v, v);
-			}
-			return null;
-		}
+		int availW = getWidth() - PADDING * 2;
+		float step = (float) (availW - (COLS - 1) * CELL_GAP) / COLS;
 
-		// Wheel?
-		int dx = x - CX;
-		int dy = y - CY;
-		double r = Math.sqrt(dx * dx + dy * dy);
-		if (r > R_OUTER[0] || r < R_INNER[R_INNER.length - 1])
+		for (int row = 0; row < ROWS; row++)
 		{
-			return null;
-		}
-
-		int ring = -1;
-		for (int i = 0; i < R_OUTER.length; i++)
-		{
-			if (r <= R_OUTER[i] && r >= R_INNER[i])
+			for (int col = 0; col < COLS; col++)
 			{
-				ring = i;
-				break;
+				int x = PADDING + Math.round(col * (step + CELL_GAP));
+				int y = PADDING + row * (CELL_H + CELL_GAP);
+				if (mx >= x && mx < x + step && my >= y && my < y + CELL_H)
+				{
+					return cells[row][col];
+				}
 			}
 		}
-		if (ring < 0)
-		{
-			return null;
-		}
-
-		// Convert atan2 to "hue angle" measured CW from top: red at top, hue index increases CW.
-		double a = Math.atan2(dy, dx);
-		double hueAngle = a + Math.PI / 2;
-		hueAngle = ((hueAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-		int wedge = (int) Math.floor((hueAngle + Math.PI / WEDGES) / (2 * Math.PI / WEDGES)) % WEDGES;
-
-		return chipColor(wedge, ring);
+		return null;
 	}
 
 	@Override
@@ -155,65 +155,56 @@ class DiscretePalette extends JPanel
 		Graphics2D g2 = (Graphics2D) g.create();
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-		// Paint outer→inner: each fillArc is a full pie slice from center, so a
-		// later (smaller) iteration would overwrite earlier rings if we went the
-		// other way. The punch-out at each ring's inner radius leaves a radial gap.
-		for (int ring = 0; ring < R_OUTER.length; ring++)
-		{
-			int outer = R_OUTER[ring];
-			int inner = R_INNER[ring];
+		int availW = getWidth() - PADDING * 2;
+		float step = (float) (availW - (COLS - 1) * CELL_GAP) / COLS;
 
-			for (int w = 0; w < WEDGES; w++)
+		for (int row = 0; row < ROWS; row++)
+		{
+			for (int col = 0; col < COLS; col++)
 			{
-				g2.setColor(chipColor(w, ring));
-				// Wedge centered on screen-CW angle: wedge 0 = up.
-				// Java arc: 0° = east, positive = CCW (visually).
-				float centerJavaDeg = 90f - w * WEDGE_DEG;
-				float startAngle = centerJavaDeg + WEDGE_DEG / 2f - WEDGE_GAP_DEG / 2f;
-				float arcAngle = -(WEDGE_DEG - WEDGE_GAP_DEG);
-				g2.fillArc(CX - outer, CY - outer, outer * 2, outer * 2,
-					Math.round(startAngle), Math.round(arcAngle));
-			}
+				Color c = cells[row][col];
+				int x = PADDING + Math.round(col * (step + CELL_GAP));
+				int y = PADDING + row * (CELL_H + CELL_GAP);
+				int w = Math.round(step);
 
-			// Punch the inner radius with the parent background to leave a radial gap.
-			// For the innermost ring inner=0, so this is a no-op and the wedges
-			// meet at the centre — closing the hole.
-			if (inner > 0)
-			{
-				g2.setColor(getParent() != null ? getParent().getBackground() : Color.BLACK);
-				g2.fillOval(CX - inner, CY - inner, inner * 2, inner * 2);
+				g2.setColor(c);
+				g2.fillRoundRect(x, y, w, CELL_H, 4, 4);
 			}
-		}
-
-		// Grayscale row
-		int grayTop = SIZE + 6;
-		int cellW = SIZE / GRAYS.length;
-		for (int i = 0; i < GRAYS.length; i++)
-		{
-			int v = GRAYS[i];
-			g2.setColor(new Color(v, v, v));
-			g2.fillRoundRect(i * cellW + 2, grayTop + 2, cellW - 4, GRAY_HEIGHT - 4, 6, 6);
-		}
-		g2.setStroke(new BasicStroke(1f));
-		g2.setColor(new Color(255, 255, 255, 30));
-		for (int i = 0; i < GRAYS.length; i++)
-		{
-			g2.drawRoundRect(i * cellW + 2, grayTop + 2, cellW - 4 - 1, GRAY_HEIGHT - 4 - 1, 6, 6);
 		}
 
 		g2.dispose();
 	}
 
-	// API parity with ColorWheelPicker so the panel can swap them transparently.
-	void setColorSilent(Color c)
+	// ─── Shared HSL → Color helper (also used by ColorWheelPicker) ────────
+
+	/** Convert HSL (h: 0–360, s: 0–100, l: 0–100) to a {@link Color}. */
+	static Color fromHSL(int h, int s, int l)
 	{
-		// Discrete palette has no persistent indicator state — repaint is a no-op.
+		float hf = h;
+		float sf = s / 100f;
+		float lf = l / 100f;
+		float c = (1f - Math.abs(2f * lf - 1f)) * sf;
+		float x = c * (1f - Math.abs(hf / 60f % 2f - 1f));
+		float m = lf - c / 2f;
+		float r, gr, b;
+		if (hf < 60)       { r = c;  gr = x;  b = 0;  }
+		else if (hf < 120) { r = x;  gr = c;  b = 0;  }
+		else if (hf < 180) { r = 0;  gr = c;  b = x;  }
+		else if (hf < 240) { r = 0;  gr = x;  b = c;  }
+		else if (hf < 300) { r = x;  gr = 0;  b = c;  }
+		else               { r = c;  gr = 0;  b = x;  }
+		return new Color(
+			Math.min(255, Math.round((r  + m) * 255)),
+			Math.min(255, Math.round((gr + m) * 255)),
+			Math.min(255, Math.round((b  + m) * 255))
+		);
 	}
 
-	/** Exposed for callers that may want to provide hover feedback later. */
-	@SuppressWarnings("unused")
-	Point centerPoint()
+	private static double colorDist(Color a, Color b)
 	{
-		return new Point(CX, CY);
+		int dr = a.getRed()   - b.getRed();
+		int dg = a.getGreen() - b.getGreen();
+		int db = a.getBlue()  - b.getBlue();
+		return dr * dr + dg * dg + db * db;
 	}
 }

@@ -1,14 +1,18 @@
 package com.chromatick;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -21,9 +25,6 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
-import javax.swing.JSpinner;
-import javax.swing.JTextField;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.ColorScheme;
@@ -31,61 +32,56 @@ import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * Sidebar panel. Top-to-bottom:
- *   - Title
- *   - Cycle / Static mode pill toggle
- *   - Cycle tabs (cycle mode) OR static border/fill swatches (static mode)
- *   - Tick swatch grid (cycle mode only) with inline "Reset" link
- *   - Picker section: grid | wheel toggle, picker, sequential-fill checkbox, hex
- *   - Collapsible "Appearance" section: border width, fill on/off, opacity, draw-below-player
- *
- * The cycle tabs drive the active in-game cycle (writes config.cycleLength
- * via plugin.setActiveCycle), so panel selection == active cycle by design.
+ * Sidebar panel — V1+ Refined layout.
  */
 class ChromatickPanel extends PluginPanel
 {
 	private static final int MIN_CYCLE = 2;
 	private static final int MAX_CYCLE = 10;
-	private static final String CARD_GRID = "grid";
+	private static final String CARD_GRID  = "grid";
 	private static final String CARD_WHEEL = "wheel";
+
+	// Design tokens
+	private static final Color TRACK_BG  = new Color(0x1A1A1A);
+	private static final Color TEXT_DIM  = new Color(0x6E6E6E);
+	private static final Color TEXT_BRIGHT = new Color(0xE4E4E4);
+	private static final Color DIVIDER   = new Color(0x3A3A3A);
 
 	private final ChromatickPlugin plugin;
 
-	// Top
+	// Mode toggle
 	private final PillToggle modeToggle;
 
-	// Cycle-mode section
+	// Cycle section
 	private final JPanel cycleSection;
 	private final JPanel cycleTabs;
 	private final JPanel swatchRow;
-	private final List<CycleTabButton> tabButtons = new ArrayList<>();
-	private final List<TickSwatch> tickSwatches = new ArrayList<>();
+	private final List<CycleTabButton> tabButtons   = new ArrayList<>();
+	private final List<TickSwatch>     tickSwatches = new ArrayList<>();
 
-	// Static-mode section
-	private final JPanel staticSection;
+	// Static section
+	private final JPanel       staticSection;
 	private final StaticSwatch staticBorderSwatch;
 	private final StaticSwatch staticFillSwatch;
 
 	// Picker
-	private final PillToggle pickerToggle;
-	private final DiscretePalette discrete;
+	private final PillToggle       pickerToggle;
+	private final DiscretePalette  discrete;
 	private final ColorWheelPicker wheel;
-	private final JPanel pickerCard;
-	private final JCheckBox sequentialFill;
-	private final JLabel hexLabel;
+	private final JPanel           pickerCard;
+	private final JCheckBox        sequentialFill;
+	private final HexDisplay       hexDisplay;
 
 	// Appearance
-	private final CollapsibleSection appearanceSection;
-	private final JSlider borderWidthSlider;
-	private final JSpinner borderWidthSpinner;
+	private final JSlider   borderWidthSlider;
+	private final JLabel    borderWidthValueLabel;
 	private final JCheckBox fillEnableBox;
-	private final JSlider fillOpacitySlider;
-	private final JSpinner fillOpacitySpinner;
+	private final JSlider   fillOpacitySlider;
+	private final JLabel    fillOpacityValueLabel;
 	private final JCheckBox drawBelowBox;
-	private boolean syncingBorderWidth;
-	private boolean syncingOpacity;
+	private final PlayerTileGlyph tileGlyph;
 
-	private int selectedCycle;
+	private int  selectedCycle;
 	private Slot editing;
 
 	ChromatickPanel(ChromatickPlugin plugin)
@@ -100,28 +96,29 @@ class ChromatickPanel extends PluginPanel
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setBackground(getBackground());
 
-		// ─── Title ───
-		JLabel title = new JLabel("ChromaTick");
-		title.setFont(FontManager.getRunescapeBoldFont());
-		title.setForeground(Color.WHITE);
-		title.setAlignmentX(CENTER_ALIGNMENT);
-		content.add(title);
+		// ─── Title ───────────────────────────────────────────────────────
+		JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 7, 0));
+		titleRow.setBackground(getBackground());
+		titleRow.setAlignmentX(CENTER_ALIGNMENT);
+		titleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+		JLabel titleLabel = new JLabel("ChromaTick");
+		titleLabel.setFont(FontManager.getRunescapeBoldFont());
+		titleLabel.setForeground(Color.WHITE);
+		titleRow.add(new ChromaTickGlyph());
+		titleRow.add(titleLabel);
+		content.add(titleRow);
 		content.add(Box.createVerticalStrut(8));
 
-		// ─── Mode toggle ───
+		// ─── Mode toggle ─────────────────────────────────────────────────
 		modeToggle = new PillToggle(new String[]{"Cycle", "Static"});
 		modeToggle.setAlignmentX(CENTER_ALIGNMENT);
-		modeToggle.addListener(idx -> {
-			plugin.setStaticMode(idx == 1);
-			// onConfigChanged → refreshFromConfig() will update visibility
-		});
+		modeToggle.addListener(idx -> plugin.setStaticMode(idx == 1));
 		content.add(modeToggle);
 		content.add(Box.createVerticalStrut(10));
 
-		// ─── Cycle section ───
+		// ─── Cycle section ───────────────────────────────────────────────
 		cycleSection = column();
-		JLabel cycleLabel = sectionLabel("Cycle length");
-		cycleSection.add(cycleLabel);
+		cycleSection.add(labelRow("Cycle length", null));
 		cycleSection.add(Box.createVerticalStrut(4));
 
 		cycleTabs = new JPanel(new GridLayout(1, MAX_CYCLE - MIN_CYCLE + 1, 2, 0));
@@ -136,32 +133,22 @@ class ChromatickPanel extends PluginPanel
 		cycleSection.add(cycleTabs);
 		cycleSection.add(Box.createVerticalStrut(8));
 
-		// Tick colors header (label + inline reset)
-		JPanel ticksHeader = new JPanel(new BorderLayout());
-		ticksHeader.setBackground(getBackground());
-		ticksHeader.setAlignmentX(CENTER_ALIGNMENT);
-		ticksHeader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 18));
-		JLabel ticksLabel = sectionLabel("Tick colors");
-		ticksLabel.setHorizontalAlignment(SwingConstants.LEFT);
-		ticksLabel.setAlignmentX(LEFT_ALIGNMENT);
-		JLabel resetLink = new JLabel("Reset");
-		resetLink.setFont(FontManager.getRunescapeSmallFont());
-		resetLink.setForeground(ColorScheme.BRAND_ORANGE);
+		JLabel resetLink = new JLabel("RESET");
+		resetLink.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		resetLink.setForeground(TEXT_DIM);
 		resetLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		resetLink.setToolTipText("Reset this cycle's colors to defaults");
 		resetLink.addMouseListener(new MouseAdapter()
 		{
 			@Override
-			public void mouseClicked(MouseEvent e)
+			public void mousePressed(MouseEvent e)
 			{
 				plugin.resetCustomPaletteForCycle(selectedCycle);
 				rebuildTickSwatches();
 				selectFirstTickSlot();
 			}
 		});
-		ticksHeader.add(ticksLabel, BorderLayout.WEST);
-		ticksHeader.add(resetLink, BorderLayout.EAST);
-		cycleSection.add(ticksHeader);
+		cycleSection.add(labelRow("Tick colors", resetLink));
 		cycleSection.add(Box.createVerticalStrut(4));
 
 		swatchRow = new JPanel();
@@ -170,34 +157,36 @@ class ChromatickPanel extends PluginPanel
 		cycleSection.add(swatchRow);
 		content.add(cycleSection);
 
-		// ─── Static section ───
+		// ─── Static section ──────────────────────────────────────────────
 		staticSection = column();
-		staticSection.add(sectionLabel("Static colors"));
+		staticSection.add(labelRow("Static colors", null));
 		staticSection.add(Box.createVerticalStrut(4));
-		JPanel staticRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+		JPanel staticRow = new JPanel(new GridLayout(1, 2, 8, 0));
 		staticRow.setBackground(getBackground());
+		staticRow.setAlignmentX(CENTER_ALIGNMENT);
+		staticRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
 		staticBorderSwatch = new StaticSwatch("Border", true);
-		staticFillSwatch = new StaticSwatch("Fill", false);
+		staticFillSwatch   = new StaticSwatch("Fill", false);
 		staticRow.add(staticBorderSwatch);
 		staticRow.add(staticFillSwatch);
 		staticSection.add(staticRow);
 		content.add(staticSection);
-
 		content.add(Box.createVerticalStrut(10));
 
-		// ─── Picker ───
+		// ─── Palette ─────────────────────────────────────────────────────
+		pickerToggle = new PillToggle(new String[]{"GRID", "WHEEL"});
+
 		JPanel pickerHeader = new JPanel(new BorderLayout());
 		pickerHeader.setBackground(getBackground());
 		pickerHeader.setAlignmentX(CENTER_ALIGNMENT);
 		pickerHeader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
 		pickerHeader.add(sectionLabel("Palette"), BorderLayout.WEST);
-		pickerToggle = new PillToggle(new String[]{"Grid", "Wheel"});
 		pickerHeader.add(pickerToggle, BorderLayout.EAST);
 		content.add(pickerHeader);
 		content.add(Box.createVerticalStrut(4));
 
 		discrete = new DiscretePalette();
-		wheel = new ColorWheelPicker();
+		wheel    = new ColorWheelPicker();
 		discrete.addColorListener(this::onPickerColor);
 		discrete.addCommitListener(this::onPickerCommit);
 		wheel.addColorListener(this::onPickerColor);
@@ -206,13 +195,12 @@ class ChromatickPanel extends PluginPanel
 		pickerCard = new JPanel(new CardLayout());
 		pickerCard.setBackground(getBackground());
 		pickerCard.setAlignmentX(CENTER_ALIGNMENT);
-		// Wrap each card so it centers in the panel column
-		pickerCard.add(centerWrap(discrete), CARD_GRID);
-		pickerCard.add(centerWrap(wheel), CARD_WHEEL);
+		// Grid fills full width; wheel is centered via FlowLayout
+		pickerCard.add(discrete, CARD_GRID);
+		pickerCard.add(wheel, CARD_WHEEL);
 		content.add(pickerCard);
 		content.add(Box.createVerticalStrut(4));
 
-		// pickerToggle listener wired AFTER pickerCard is assigned (definite-assignment rule)
 		pickerToggle.addListener(idx -> {
 			String mode = idx == 0 ? CARD_GRID : CARD_WHEEL;
 			plugin.setPaletteMode(mode);
@@ -220,86 +208,103 @@ class ChromatickPanel extends PluginPanel
 			syncPickerToEditingSlot();
 		});
 
-		// Hex + sequential fill on one row
-		JPanel underPicker = new JPanel(new BorderLayout());
-		underPicker.setBackground(getBackground());
-		underPicker.setAlignmentX(CENTER_ALIGNMENT);
-		underPicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
-		hexLabel = new JLabel("#FFFFFF");
-		hexLabel.setFont(FontManager.getRunescapeSmallFont());
-		hexLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		sequentialFill = new JCheckBox("Sequential");
+		// Hex display + auto-advance
+		hexDisplay     = new HexDisplay();
+		sequentialFill = new JCheckBox("Auto-advance →");
 		sequentialFill.setFont(FontManager.getRunescapeSmallFont());
 		sequentialFill.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		sequentialFill.setBackground(getBackground());
 		sequentialFill.setToolTipText("Auto-advance to the next tick slot after each pick");
 		sequentialFill.addActionListener(e -> plugin.setSequentialFill(sequentialFill.isSelected()));
-		underPicker.add(hexLabel, BorderLayout.WEST);
+
+		JPanel underPicker = new JPanel(new BorderLayout());
+		underPicker.setBackground(getBackground());
+		underPicker.setAlignmentX(CENTER_ALIGNMENT);
+		underPicker.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+		underPicker.add(hexDisplay, BorderLayout.WEST);
 		underPicker.add(sequentialFill, BorderLayout.EAST);
 		content.add(underPicker);
-		content.add(Box.createVerticalStrut(10));
 
-		// ─── Appearance (collapsible) ───
+		// ─── Thin divider ─────────────────────────────────────────────────
+		content.add(Box.createVerticalStrut(10));
+		JPanel divider = new JPanel();
+		divider.setBackground(DIVIDER);
+		divider.setOpaque(true);
+		divider.setMinimumSize(new Dimension(0, 1));
+		divider.setPreferredSize(new Dimension(0, 1));
+		divider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+		divider.setAlignmentX(CENTER_ALIGNMENT);
+		content.add(divider);
+		content.add(Box.createVerticalStrut(6));
+
+		// ─── Appearance (always visible) ──────────────────────────────────
+		JPanel appearanceHeader = new JPanel(new BorderLayout());
+		appearanceHeader.setBackground(getBackground());
+		appearanceHeader.setAlignmentX(CENTER_ALIGNMENT);
+		appearanceHeader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 18));
+		appearanceHeader.add(sectionLabel("Appearance"), BorderLayout.WEST);
+		content.add(appearanceHeader);
+		content.add(Box.createVerticalStrut(4));
+
 		JPanel appearanceBody = new JPanel();
 		appearanceBody.setLayout(new BoxLayout(appearanceBody, BoxLayout.Y_AXIS));
 		appearanceBody.setBackground(getBackground());
+		appearanceBody.setAlignmentX(CENTER_ALIGNMENT);
 
-		borderWidthSlider = themedSlider(1, 5);
-		borderWidthSpinner = numberSpinner(2, 1, 5);
+		// Border width
+		borderWidthSlider     = themedSlider(1, 5);
+		borderWidthValueLabel = compactValueLabel();
 		borderWidthSlider.addChangeListener(e -> {
-			if (syncingBorderWidth) return;
 			int v = borderWidthSlider.getValue();
-			setBorderWidthControls(v);
+			borderWidthValueLabel.setText(valueFmt(v, "px"));
 			plugin.setBorderWidth(v);
 		});
-		borderWidthSpinner.addChangeListener(e -> {
-			if (syncingBorderWidth) return;
-			int v = (Integer) borderWidthSpinner.getValue();
-			setBorderWidthControls(v);
-			plugin.setBorderWidth(v);
-		});
-		appearanceBody.add(labeledRowWithSpinner("Border width", borderWidthSlider, borderWidthSpinner, "px"));
+		appearanceBody.add(labeledSliderRow("Border width", borderWidthSlider, borderWidthValueLabel));
 
+		// Fill enable
 		fillEnableBox = themedCheckBox("Fill tile");
 		appearanceBody.add(fillEnableBox);
 
-		fillOpacitySlider = themedSlider(0, 255);
-		fillOpacitySpinner = numberSpinner(20, 0, 100);
+		// Fill opacity
+		fillOpacitySlider     = themedSlider(0, 100);
+		fillOpacityValueLabel = compactValueLabel();
 		fillOpacitySlider.addChangeListener(e -> {
-			if (syncingOpacity) return;
-			int v = fillOpacitySlider.getValue();
-			setOpacityControls(v);
-			plugin.setFillOpacity(v);
+			int pct  = fillOpacitySlider.getValue();
+			int v255 = Math.round(pct * 2.55f);
+			fillOpacityValueLabel.setText(valueFmt(pct, "%"));
+			plugin.setFillOpacity(v255);
 		});
-		fillOpacitySpinner.addChangeListener(e -> {
-			if (syncingOpacity) return;
-			int pct = (Integer) fillOpacitySpinner.getValue();
-			int v = Math.round(pct * 2.55f);
-			setOpacityControls(v);
-			plugin.setFillOpacity(v);
-		});
-		appearanceBody.add(labeledRowWithSpinner("Fill opacity", fillOpacitySlider, fillOpacitySpinner, "%"));
-
-		// Wired AFTER fillOpacitySlider/fillOpacitySpinner are assigned
 		fillEnableBox.addActionListener(e -> {
-			plugin.setEnableFillColor(fillEnableBox.isSelected());
-			fillOpacitySlider.setEnabled(fillEnableBox.isSelected());
-			fillOpacitySpinner.setEnabled(fillEnableBox.isSelected());
+			boolean on = fillEnableBox.isSelected();
+			plugin.setEnableFillColor(on);
+			fillOpacitySlider.setEnabled(on);
+			fillOpacityValueLabel.setEnabled(on);
 		});
+		appearanceBody.add(labeledSliderRow("Fill opacity", fillOpacitySlider, fillOpacityValueLabel));
 
-		drawBelowBox = themedCheckBox("Draw below player");
+		// Draw tile row: checkbox (dynamic text) + tile glyph
+		ChromatickConfig cfg = plugin.getConfig();
+		drawBelowBox = themedCheckBox(drawBelowText(cfg.drawBelowPlayer()));
 		drawBelowBox.setToolTipText("Requires GPU rendering mode in RuneLite settings");
-		drawBelowBox.addActionListener(e -> plugin.setDrawBelowPlayer(drawBelowBox.isSelected()));
-		appearanceBody.add(drawBelowBox);
+		tileGlyph = new PlayerTileGlyph(cfg.drawBelowPlayer());
+		drawBelowBox.addActionListener(e -> {
+			boolean below = drawBelowBox.isSelected();
+			plugin.setDrawBelowPlayer(below);
+			drawBelowBox.setText(drawBelowText(below));
+			tileGlyph.setBelow(below);
+		});
+		JPanel drawBelowRow = new JPanel(new BorderLayout(6, 0));
+		drawBelowRow.setBackground(getBackground());
+		drawBelowRow.setAlignmentX(LEFT_ALIGNMENT);
+		drawBelowRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+		drawBelowRow.add(drawBelowBox, BorderLayout.CENTER);
+		drawBelowRow.add(tileGlyph, BorderLayout.EAST);
+		appearanceBody.add(drawBelowRow);
 
-		appearanceSection = new CollapsibleSection("Appearance", appearanceBody);
-		appearanceSection.setAlignmentX(CENTER_ALIGNMENT);
-		content.add(appearanceSection);
-
+		content.add(appearanceBody);
 		add(content, BorderLayout.NORTH);
 
-		// Initial state from config
-		ChromatickConfig cfg = plugin.getConfig();
+		// ─── Initial state ────────────────────────────────────────────────
 		modeToggle.setSelected(cfg.staticMode() ? 1 : 0);
 		pickerToggle.setSelected(CARD_WHEEL.equals(cfg.paletteMode()) ? 1 : 0);
 		((CardLayout) pickerCard.getLayout()).show(pickerCard, cfg.paletteMode());
@@ -308,7 +313,7 @@ class ChromatickPanel extends PluginPanel
 		fillEnableBox.setSelected(cfg.enableFillColor());
 		setOpacityControls(cfg.fillOpacity());
 		fillOpacitySlider.setEnabled(cfg.enableFillColor());
-		fillOpacitySpinner.setEnabled(cfg.enableFillColor());
+		fillOpacityValueLabel.setEnabled(cfg.enableFillColor());
 		drawBelowBox.setSelected(cfg.drawBelowPlayer());
 
 		selectedCycle = clampCycle(plugin.getEffectiveCycleLength());
@@ -318,12 +323,12 @@ class ChromatickPanel extends PluginPanel
 		selectInitialEditingSlot();
 	}
 
-	// ─── Public sync hooks (called by plugin) ─────────────────────────────
+	// ─── Public sync hooks ────────────────────────────────────────────────
 
 	void refreshFromConfig()
 	{
-		ChromatickConfig cfg = plugin.getConfig();
-		boolean isStatic = cfg.staticMode();
+		ChromatickConfig cfg      = plugin.getConfig();
+		boolean          isStatic = cfg.staticMode();
 		modeToggle.setSelected(isStatic ? 1 : 0);
 		applyModeVisibility(isStatic);
 
@@ -339,20 +344,21 @@ class ChromatickPanel extends PluginPanel
 		}
 		highlightActiveCycleTab();
 
-		// Refresh static swatch colors from config
 		staticBorderSwatch.setColor(cfg.staticColor());
 		staticFillSwatch.setColor(cfg.staticFillColor());
 
-		// Appearance values may have changed externally
 		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
 		fillEnableBox.setSelected(cfg.enableFillColor());
 		setOpacityControls(cfg.fillOpacity());
 		fillOpacitySlider.setEnabled(cfg.enableFillColor());
-		fillOpacitySpinner.setEnabled(cfg.enableFillColor());
-		drawBelowBox.setSelected(cfg.drawBelowPlayer());
+		fillOpacityValueLabel.setEnabled(cfg.enableFillColor());
+
+		boolean below = cfg.drawBelowPlayer();
+		drawBelowBox.setSelected(below);
+		drawBelowBox.setText(drawBelowText(below));
+		tileGlyph.setBelow(below);
 	}
 
-	/** Called when a palette JSON config changed; only refreshes if relevant. */
 	void onPaletteChanged(int cycleN)
 	{
 		if (cycleN == selectedCycle && !plugin.isStaticMode())
@@ -366,7 +372,7 @@ class ChromatickPanel extends PluginPanel
 		}
 	}
 
-	// ─── Picker event handlers ────────────────────────────────────────────
+	// ─── Picker handlers ──────────────────────────────────────────────────
 
 	private void onPickerColor(Color c)
 	{
@@ -388,7 +394,7 @@ class ChromatickPanel extends PluginPanel
 		}
 	}
 
-	// ─── Mode / selection state ───────────────────────────────────────────
+	// ─── State helpers ────────────────────────────────────────────────────
 
 	private void applyModeVisibility(boolean isStatic)
 	{
@@ -397,7 +403,6 @@ class ChromatickPanel extends PluginPanel
 		sequentialFill.setEnabled(!isStatic);
 		if (isStatic)
 		{
-			// Editing target defaults to the border swatch in static mode
 			if (!(editing instanceof StaticSwatch))
 			{
 				selectStaticSwatch(staticBorderSwatch);
@@ -415,7 +420,7 @@ class ChromatickPanel extends PluginPanel
 	{
 		for (CycleTabButton b : tabButtons)
 		{
-			b.setSelected(b.cycle == selectedCycle);
+			b.setTabSelected(b.cycle == selectedCycle);
 		}
 	}
 
@@ -425,7 +430,7 @@ class ChromatickPanel extends PluginPanel
 		tickSwatches.clear();
 		Color[] palette = plugin.getCustomPaletteForCycle(selectedCycle);
 		int perRow = Math.min(selectedCycle, 5);
-		int rows = (int) Math.ceil(selectedCycle / (double) perRow);
+		int rows   = (int) Math.ceil(selectedCycle / (double) perRow);
 		swatchRow.setLayout(new GridLayout(rows, perRow, 4, 4));
 		for (int i = 0; i < selectedCycle; i++)
 		{
@@ -493,7 +498,7 @@ class ChromatickPanel extends PluginPanel
 
 	private void updateHex(Color c)
 	{
-		hexLabel.setText(String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue()));
+		hexDisplay.setColor(c);
 	}
 
 	private static int clampCycle(int n)
@@ -501,7 +506,7 @@ class ChromatickPanel extends PluginPanel
 		return Math.max(MIN_CYCLE, Math.min(MAX_CYCLE, n));
 	}
 
-	// ─── Small layout helpers ─────────────────────────────────────────────
+	// ─── Layout helpers ───────────────────────────────────────────────────
 
 	private JPanel column()
 	{
@@ -514,11 +519,25 @@ class ChromatickPanel extends PluginPanel
 
 	private JLabel sectionLabel(String text)
 	{
-		JLabel l = new JLabel(text);
-		l.setFont(FontManager.getRunescapeSmallFont());
-		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		JLabel l = new JLabel(text.toUpperCase());
+		l.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD));
+		l.setForeground(TEXT_DIM);
 		l.setAlignmentX(CENTER_ALIGNMENT);
 		return l;
+	}
+
+	private JPanel labelRow(String text, JLabel right)
+	{
+		JPanel row = new JPanel(new BorderLayout());
+		row.setBackground(getBackground());
+		row.setAlignmentX(CENTER_ALIGNMENT);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 18));
+		row.add(sectionLabel(text), BorderLayout.WEST);
+		if (right != null)
+		{
+			row.add(right, BorderLayout.EAST);
+		}
+		return row;
 	}
 
 	private JPanel centerWrap(JPanel inner)
@@ -548,84 +567,58 @@ class ChromatickPanel extends PluginPanel
 		return s;
 	}
 
-	private JPanel labeledRow(String label, JSlider slider)
+	private JLabel compactValueLabel()
 	{
-		JPanel row = new JPanel(new BorderLayout(6, 0));
-		row.setBackground(getBackground());
-		row.setAlignmentX(LEFT_ALIGNMENT);
-		JLabel l = new JLabel(label);
+		JLabel l = new JLabel();
 		l.setFont(FontManager.getRunescapeSmallFont());
-		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setPreferredSize(new Dimension(80, 16));
-		row.add(l, BorderLayout.WEST);
-		row.add(slider, BorderLayout.CENTER);
-		return row;
+		l.setHorizontalAlignment(SwingConstants.RIGHT);
+		l.setPreferredSize(new Dimension(40, 16));
+		return l;
 	}
 
-	private JSpinner numberSpinner(int value, int min, int max)
+	/** Returns HTML with bright number and dim unit: "3 px" or "40 %" */
+	private static String valueFmt(int n, String unit)
 	{
-		JSpinner s = new JSpinner(new SpinnerNumberModel(value, min, max, 1));
-		JSpinner.DefaultEditor editor = (JSpinner.DefaultEditor) s.getEditor();
-		editor.getTextField().setColumns(3);
-		editor.getTextField().setHorizontalAlignment(JTextField.CENTER);
-		return s;
+		return "<html><font color='#E4E4E4'>" + n + "</font>"
+			+ "<font color='#6E6E6E'> " + unit + "</font></html>";
 	}
 
-	private JPanel labeledRowWithSpinner(String label, JSlider slider, JSpinner spinner, String suffix)
+	private JPanel labeledSliderRow(String text, JSlider slider, JLabel valueLabel)
 	{
 		JPanel row = new JPanel(new BorderLayout(4, 0));
 		row.setBackground(getBackground());
 		row.setAlignmentX(LEFT_ALIGNMENT);
-		JLabel l = new JLabel(label);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
+		JLabel l = new JLabel(text);
 		l.setFont(FontManager.getRunescapeSmallFont());
 		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		l.setPreferredSize(new Dimension(70, 16));
-		row.add(l, BorderLayout.WEST);
-		row.add(slider, BorderLayout.CENTER);
-
-		JPanel right = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
-		right.setBackground(getBackground());
-		right.add(spinner);
-		if (suffix != null && !suffix.isEmpty())
-		{
-			JLabel sx = new JLabel(suffix);
-			sx.setFont(FontManager.getRunescapeSmallFont());
-			sx.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			right.add(sx);
-		}
-		row.add(right, BorderLayout.EAST);
+		l.setPreferredSize(new Dimension(72, 16));
+		row.add(l,          BorderLayout.WEST);
+		row.add(slider,     BorderLayout.CENTER);
+		row.add(valueLabel, BorderLayout.EAST);
 		return row;
 	}
 
 	private void setBorderWidthControls(int v)
 	{
-		syncingBorderWidth = true;
-		try
-		{
-			borderWidthSlider.setValue(v);
-			borderWidthSpinner.setValue(v);
-		}
-		finally
-		{
-			syncingBorderWidth = false;
-		}
+		borderWidthSlider.setValue(v);
+		borderWidthValueLabel.setText(valueFmt(v, "px"));
 	}
 
-	private void setOpacityControls(int v)
+	private void setOpacityControls(int v255)
 	{
-		syncingOpacity = true;
-		try
-		{
-			fillOpacitySlider.setValue(v);
-			fillOpacitySpinner.setValue(Math.round(v / 2.55f));
-		}
-		finally
-		{
-			syncingOpacity = false;
-		}
+		int pct = Math.round(v255 / 2.55f);
+		fillOpacitySlider.setValue(pct);
+		fillOpacityValueLabel.setText(valueFmt(pct, "%"));
 	}
 
-	// ─── Slot abstraction ────────────────────────────────────────────────
+	private static String drawBelowText(boolean below)
+	{
+		String word = below ? "under" : "above";
+		return "<html>Draw tile <b><font color='#E4E4E4'>" + word + "</font></b> player</html>";
+	}
+
+	// ─── Slot abstraction ─────────────────────────────────────────────────
 
 	private interface Slot
 	{
@@ -633,26 +626,26 @@ class ChromatickPanel extends PluginPanel
 		void applyColor(Color c);
 	}
 
-	// ─── Tick swatch (one cell of the cycle palette) ─────────────────────
+	// ─── Tick swatch ──────────────────────────────────────────────────────
 
 	private class TickSwatch extends JPanel implements Slot
 	{
 		final int index;
-		private Color color;
+		private Color   color;
 		private boolean selected;
 
 		TickSwatch(int index, Color color)
 		{
 			this.index = index;
 			this.color = color;
-			setPreferredSize(new Dimension(28, 28));
-			setBackground(ColorScheme.DARK_GRAY_COLOR);
+			setPreferredSize(new Dimension(28, 30));
+			setOpaque(false);
 			setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			setToolTipText("Tick " + (index + 1));
 			addMouseListener(new MouseAdapter()
 			{
 				@Override
-				public void mouseClicked(MouseEvent e)
+				public void mousePressed(MouseEvent e)
 				{
 					selectTickSlot(index);
 				}
@@ -688,50 +681,63 @@ class ChromatickPanel extends PluginPanel
 		@Override
 		protected void paintComponent(Graphics g)
 		{
-			super.paintComponent(g);
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			int w = getWidth();
 			int h = getHeight();
-			int pad = selected ? 3 : 2;
-			g2.setColor(color);
-			g2.fillRoundRect(pad, pad, w - pad * 2, h - pad * 2, 6, 6);
-			g2.setColor(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR.darker());
-			g2.setStroke(new java.awt.BasicStroke(selected ? 2f : 1f));
-			g2.drawRoundRect(pad, pad, w - pad * 2 - 1, h - pad * 2 - 1, 6, 6);
-			String s = String.valueOf(index + 1);
-			g2.setFont(FontManager.getRunescapeSmallFont());
-			int sw = g2.getFontMetrics().stringWidth(s);
-			int sh = g2.getFontMetrics().getAscent();
+
+			if (selected)
+			{
+				g2.setColor(ColorScheme.BRAND_ORANGE);
+				g2.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g2.drawRoundRect(1, 1, w - 2, h - 2, 6, 6);
+				g2.setColor(color);
+				g2.fillRoundRect(3, 3, w - 6, h - 6, 4, 4);
+			}
+			else
+			{
+				g2.setColor(color);
+				g2.fillRoundRect(0, 0, w, h, 6, 6);
+				g2.setColor(new Color(0, 0, 0, 70));
+				g2.setStroke(new BasicStroke(1f));
+				g2.drawRoundRect(0, 0, w - 1, h - 1, 6, 6);
+			}
+
+			// Tick number — bold, contrast-aware
+			Font bold = FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD);
+			g2.setFont(bold);
+			String s    = String.valueOf(index + 1);
 			double luma = 0.299 * color.getRed() + 0.587 * color.getGreen() + 0.114 * color.getBlue();
 			g2.setColor(luma > 140 ? Color.BLACK : Color.WHITE);
+			int sw = g2.getFontMetrics().stringWidth(s);
+			int sh = g2.getFontMetrics().getAscent();
 			g2.drawString(s, (w - sw) / 2, (h + sh) / 2 - 2);
 			g2.dispose();
 		}
 	}
 
-	// ─── Static color swatch ─────────────────────────────────────────────
+	// ─── Static swatch ────────────────────────────────────────────────────
 
 	private class StaticSwatch extends JPanel implements Slot
 	{
-		private final String label;
+		private final String  label;
 		private final boolean border;
-		private Color color;
-		private boolean selected;
+		private Color         color;
+		private boolean       selected;
 
 		StaticSwatch(String label, boolean border)
 		{
-			this.label = label;
+			this.label  = label;
 			this.border = border;
-			this.color = border ? plugin.getConfig().staticColor() : plugin.getConfig().staticFillColor();
+			this.color  = border ? plugin.getConfig().staticColor() : plugin.getConfig().staticFillColor();
 			setPreferredSize(new Dimension(72, 48));
-			setBackground(ColorScheme.DARK_GRAY_COLOR);
+			setOpaque(false);
 			setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			setToolTipText("Click to edit " + label.toLowerCase());
 			addMouseListener(new MouseAdapter()
 			{
 				@Override
-				public void mouseClicked(MouseEvent e)
+				public void mousePressed(MouseEvent e)
 				{
 					selectStaticSwatch(StaticSwatch.this);
 				}
@@ -747,7 +753,6 @@ class ChromatickPanel extends PluginPanel
 		@Override
 		public void applyColor(Color c)
 		{
-			// Preserve previous alpha so the user keeps their existing transparency.
 			Color withAlpha = new Color(c.getRed(), c.getGreen(), c.getBlue(), color.getAlpha());
 			color = withAlpha;
 			if (border)
@@ -776,39 +781,51 @@ class ChromatickPanel extends PluginPanel
 		@Override
 		protected void paintComponent(Graphics g)
 		{
-			super.paintComponent(g);
 			Graphics2D g2 = (Graphics2D) g.create();
 			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			int w = getWidth();
 			int h = getHeight();
-			int pad = selected ? 3 : 2;
 			Color opaque = new Color(color.getRed(), color.getGreen(), color.getBlue());
-			g2.setColor(opaque);
-			g2.fillRoundRect(pad, pad, w - pad * 2, h - pad * 2, 6, 6);
-			g2.setColor(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR.darker());
-			g2.setStroke(new java.awt.BasicStroke(selected ? 2f : 1f));
-			g2.drawRoundRect(pad, pad, w - pad * 2 - 1, h - pad * 2 - 1, 6, 6);
+
+			if (selected)
+			{
+				g2.setColor(ColorScheme.BRAND_ORANGE);
+				g2.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+				g2.drawRoundRect(1, 1, w - 2, h - 2, 6, 6);
+				g2.setColor(opaque);
+				g2.fillRoundRect(3, 3, w - 6, h - 6, 4, 4);
+			}
+			else
+			{
+				g2.setColor(opaque);
+				g2.fillRoundRect(0, 0, w, h, 6, 6);
+				g2.setColor(new Color(0, 0, 0, 70));
+				g2.setStroke(new BasicStroke(1f));
+				g2.drawRoundRect(0, 0, w - 1, h - 1, 6, 6);
+			}
+
 			g2.setFont(FontManager.getRunescapeSmallFont());
-			int sw = g2.getFontMetrics().stringWidth(label);
 			double luma = 0.299 * color.getRed() + 0.587 * color.getGreen() + 0.114 * color.getBlue();
 			g2.setColor(luma > 140 ? Color.BLACK : Color.WHITE);
+			int sw = g2.getFontMetrics().stringWidth(label);
 			g2.drawString(label, (w - sw) / 2, h - 6);
 			g2.dispose();
 		}
 	}
 
-	// ─── Cycle tab button ────────────────────────────────────────────────
+	// ─── Cycle tab button ─────────────────────────────────────────────────
 
 	private class CycleTabButton extends JPanel
 	{
-		final int cycle;
+		final int     cycle;
 		private final JLabel label;
+		private boolean tabSelected;
 
 		CycleTabButton(int cycle)
 		{
 			this.cycle = cycle;
 			setLayout(new BorderLayout());
-			setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			setOpaque(false);
 			setBorder(new EmptyBorder(4, 0, 4, 0));
 			setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 			label = new JLabel(String.valueOf(cycle), SwingConstants.CENTER);
@@ -818,26 +835,35 @@ class ChromatickPanel extends PluginPanel
 			addMouseListener(new MouseAdapter()
 			{
 				@Override
-				public void mouseClicked(MouseEvent e)
+				public void mousePressed(MouseEvent e)
 				{
 					if (cycle != selectedCycle)
 					{
 						plugin.setActiveCycle(cycle);
-						// onConfigChanged → refreshFromConfig will sync the panel
 					}
 				}
 			});
 		}
 
-		void setSelected(boolean sel)
+		void setTabSelected(boolean sel)
 		{
-			setBackground(sel ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR);
+			tabSelected = sel;
 			label.setForeground(sel ? Color.BLACK : ColorScheme.LIGHT_GRAY_COLOR);
 			repaint();
 		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(tabSelected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR);
+			g2.fillRoundRect(0, 0, getWidth(), getHeight(), 5, 5);
+			g2.dispose();
+		}
 	}
 
-	// ─── Pill toggle (segmented control) ─────────────────────────────────
+	// ─── Pill toggle ──────────────────────────────────────────────────────
 
 	private class PillToggle extends JPanel
 	{
@@ -848,22 +874,39 @@ class ChromatickPanel extends PluginPanel
 		PillToggle(String[] options)
 		{
 			setLayout(new GridLayout(1, options.length, 2, 0));
-			setBackground(getBackground());
+			setOpaque(false);
+			setBorder(new EmptyBorder(2, 2, 2, 2));
 			setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+
 			for (int i = 0; i < options.length; i++)
 			{
 				final int idx = i;
-				JLabel pill = new JLabel(options[i], SwingConstants.CENTER);
-				pill.setOpaque(true);
+				JLabel pill = new JLabel(options[i], SwingConstants.CENTER)
+				{
+					final int pillIdx = idx;
+
+					@Override
+					protected void paintComponent(Graphics g)
+					{
+						if (pillIdx == selected)
+						{
+							Graphics2D g2 = (Graphics2D) g.create();
+							g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+							g2.setColor(ColorScheme.BRAND_ORANGE);
+							g2.fillRoundRect(0, 0, getWidth(), getHeight(), 4, 4);
+							g2.dispose();
+						}
+						super.paintComponent(g);
+					}
+				};
+				pill.setOpaque(false);
 				pill.setFont(FontManager.getRunescapeSmallFont());
-				pill.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				pill.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				pill.setBorder(new EmptyBorder(5, 8, 5, 8));
+				pill.setBorder(new EmptyBorder(3, 6, 3, 6));
 				pill.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 				pill.addMouseListener(new MouseAdapter()
 				{
 					@Override
-					public void mouseClicked(MouseEvent e)
+					public void mousePressed(MouseEvent e)
 					{
 						if (idx != selected)
 						{
@@ -892,68 +935,158 @@ class ChromatickPanel extends PluginPanel
 			listener = l;
 		}
 
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(TRACK_BG);
+			g2.fillRoundRect(0, 0, getWidth(), getHeight(), 6, 6);
+			g2.dispose();
+		}
+
 		private void applyStyles()
 		{
-			for (int i = 0; i < pills.size(); i++)
+			for (int j = 0; j < pills.size(); j++)
 			{
-				JLabel p = pills.get(i);
-				if (i == selected)
-				{
-					p.setBackground(ColorScheme.BRAND_ORANGE);
-					p.setForeground(Color.BLACK);
-				}
-				else
-				{
-					p.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					p.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-				}
+				pills.get(j).setForeground(j == selected ? Color.BLACK : ColorScheme.LIGHT_GRAY_COLOR);
+				pills.get(j).repaint();
 			}
 			repaint();
 		}
 	}
 
-	// ─── Collapsible section ─────────────────────────────────────────────
+	// ─── ChromaTick glyph (5 coloured bars) ──────────────────────────────
 
-	private class CollapsibleSection extends JPanel
+	private static class ChromaTickGlyph extends JPanel
 	{
-		private final JLabel header;
-		private final JPanel body;
-		private boolean expanded = false;
+		private static final Color[] BANDS = {
+			new Color(0xE9, 0x4B, 0x4B),
+			new Color(0xF4, 0xD0, 0x3F),
+			new Color(0x5B, 0xCB, 0x6A),
+			new Color(0x3D, 0x8A, 0xE0),
+			new Color(0xA4, 0x5C, 0xDB),
+		};
 
-		CollapsibleSection(String title, JPanel content)
+		ChromaTickGlyph()
 		{
-			setLayout(new BorderLayout());
-			setBackground(getBackground());
-			setBorder(new EmptyBorder(4, 0, 4, 0));
-
-			header = new JLabel("▸ " + title);
-			header.setFont(FontManager.getRunescapeSmallFont());
-			header.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-			header.setBorder(new EmptyBorder(4, 0, 4, 0));
-			header.addMouseListener(new MouseAdapter()
-			{
-				@Override
-				public void mouseClicked(MouseEvent e)
-				{
-					setExpanded(!expanded);
-				}
-			});
-
-			body = content;
-			body.setVisible(false);
-
-			add(header, BorderLayout.NORTH);
-			add(body, BorderLayout.CENTER);
+			setPreferredSize(new Dimension(18, 13));
+			setOpaque(false);
 		}
 
-		void setExpanded(boolean exp)
+		@Override
+		protected void paintComponent(Graphics g)
 		{
-			expanded = exp;
-			header.setText((exp ? "▾ " : "▸ ") + header.getText().substring(2));
-			header.setForeground(exp ? ColorScheme.BRAND_ORANGE : ColorScheme.LIGHT_GRAY_COLOR);
-			body.setVisible(exp);
-			revalidate();
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			int h = getHeight();
+			for (int i = 0; i < BANDS.length; i++)
+			{
+				int bandH = h - (i % 2 == 0 ? 0 : 2);
+				int y     = i % 2 == 0 ? 0 : 1;
+				int x     = i * 4;
+				g2.setColor(BANDS[i]);
+				g2.fillRoundRect(x, y, 2, bandH, 2, 2);
+			}
+			g2.dispose();
+		}
+	}
+
+	// ─── Hex display (coloured square + hex text) ─────────────────────────
+
+	private class HexDisplay extends JPanel
+	{
+		private Color currentColor = Color.WHITE;
+
+		HexDisplay()
+		{
+			setOpaque(false);
+			setPreferredSize(new Dimension(82, 14));
+		}
+
+		void setColor(Color c)
+		{
+			currentColor = c;
+			repaint();
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(currentColor);
+			g2.fillRoundRect(0, 2, 10, 10, 2, 2);
+			g2.setColor(new Color(0, 0, 0, 100));
+			g2.setStroke(new BasicStroke(1f));
+			g2.drawRoundRect(0, 2, 10, 10, 2, 2);
+			g2.setFont(FontManager.getRunescapeSmallFont());
+			g2.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+			String hex = String.format("#%02X%02X%02X",
+				currentColor.getRed(), currentColor.getGreen(), currentColor.getBlue());
+			g2.drawString(hex, 15, g2.getFontMetrics().getAscent() + 2);
+			g2.dispose();
+		}
+	}
+
+	// ─── Player tile glyph (tile over/under player indicator) ────────────
+
+	private static class PlayerTileGlyph extends JPanel
+	{
+		private static final int[] TILE_X = {2, 11, 20, 11};
+		private static final int[] TILE_Y = {12, 7, 12, 17};
+
+		private boolean below;
+
+		PlayerTileGlyph(boolean below)
+		{
+			this.below = below;
+			setPreferredSize(new Dimension(22, 18));
+			setOpaque(false);
+		}
+
+		void setBelow(boolean b)
+		{
+			below = b;
+			repaint();
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+			if (below)
+			{
+				paintTile(g2, 0.55f);
+				paintPlayer(g2);
+			}
+			else
+			{
+				paintPlayer(g2);
+				paintTile(g2, 0.65f);
+			}
+			g2.dispose();
+		}
+
+		private void paintTile(Graphics2D g2, float alpha)
+		{
+			Polygon tile = new Polygon(TILE_X, TILE_Y, 4);
+			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+			g2.setColor(ColorScheme.BRAND_ORANGE);
+			g2.fillPolygon(tile);
+			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f));
+			g2.setStroke(new BasicStroke(1f));
+			g2.drawPolygon(tile);
+		}
+
+		private void paintPlayer(Graphics2D g2)
+		{
+			g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f));
+			g2.setColor(TEXT_BRIGHT);
+			g2.fillOval(9, 4, 4, 4);
+			g2.fillRoundRect(9, 8, 4, 6, 1, 1);
 		}
 	}
 }
