@@ -31,11 +31,12 @@ class DiscretePalette extends JPanel
 	// Ring boundaries (outermost first). Small radial gaps make the chips read as separate.
 	private static final int[] R_OUTER = {96, 68, 40};
 	private static final int[] R_INNER = {72, 44, 16};
-	// (S, V) for each ring: tint, pure, shade
+	// (S, V) per ring: outer = pure hue; inner rings add white (lower S, V stays high).
+	// Vivid on the rim, fading to near-white at the center.
 	private static final float[][] RING_SV = {
-		{0.5f, 1.0f},
-		{1.0f, 1.0f},
-		{1.0f, 0.55f},
+		{1.00f, 1.00f},
+		{0.66f, 1.00f},
+		{0.33f, 1.00f},
 	};
 	private static final float WEDGE_DEG = 360f / WEDGES;
 	private static final float WEDGE_GAP_DEG = 2f;
