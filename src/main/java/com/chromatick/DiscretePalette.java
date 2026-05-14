@@ -146,8 +146,10 @@ class DiscretePalette extends JPanel
 		Graphics2D g2 = (Graphics2D) g.create();
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-		// Draw rings inner→outer so the radial-gap punch-outs work cleanly.
-		for (int ring = R_OUTER.length - 1; ring >= 0; ring--)
+		// Paint outer→inner: each fillArc is a full pie slice from center, so a
+		// later (smaller) iteration would overwrite earlier rings if we went the
+		// other way. The punch-out at each ring's inner radius leaves a radial gap.
+		for (int ring = 0; ring < R_OUTER.length; ring++)
 		{
 			int outer = R_OUTER[ring];
 			int inner = R_INNER[ring];
