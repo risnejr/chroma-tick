@@ -1,9 +1,15 @@
 package com.chromatick;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.KeyEvent;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -16,7 +22,10 @@ import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ImageUtil;
 
 // Inspired by MarlGames' "Learn Solo Olm Without Counting Ticks Using This Brainhack (OSRS)"
 // https://www.youtube.com/watch?v=4fc4eIUmj6U — adapted from vincent0955's Visual Metronome plugin.
@@ -30,10 +39,16 @@ import net.runelite.client.ui.overlay.OverlayManager;
 )
 public class ChromatickPlugin extends Plugin implements KeyListener
 {
+	private static final int MIN_CYCLE = 2;
+	private static final int MAX_CYCLE = 10;
+
+	private static final String CUSTOM_PALETTE_PREFIX = "customPalette";
+	private static final Type PALETTE_TYPE = new TypeToken<List<Integer>>(){}.getType();
+
 	// PALETTES[n] = the perceptually-optimal n-color palette, indexed by cycle length.
 	// Computed using OKLab perceptual color space with a greedy farthest-point algorithm.
 	// Each palette has its colors maximally distinct and spread evenly around the hue wheel.
-	private static final Color[][] PALETTES = {
+	static final Color[][] PALETTES = {
 		null, // index 0 unused
 		null, // index 1 unused
 		{
@@ -129,6 +144,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private ConfigManager configManager;
 
 	@Inject
+	private Gson gson;
+
+	@Inject
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
@@ -136,6 +154,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	@Inject
 	private KeyManager keyManager;
+
+	@Inject
+	private ClientToolbar clientToolbar;
 
 	/** Current position in the color cycle (0-based). */
 	@Getter
@@ -147,6 +168,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	/** Hotkey override for cycle length; -1 = use config slider value. */
 	private int cycleLengthOverride = -1;
+
+	private ChromatickPanel panel;
+	private NavigationButton navButton;
 
 	@Provides
 	ChromatickConfig provideConfig(ConfigManager configManager)
@@ -162,6 +186,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		tickIndex = 0;
 		cycleLengthOverride = -1;
 		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
+
+		panel = new ChromatickPanel(this);
+		navButton = NavigationButton.builder()
+			.tooltip("ChromaTick")
+			.icon(ImageUtil.loadImageResource(getClass(), "icon.png"))
+			.priority(7)
+			.panel(panel)
+			.build();
+		clientToolbar.addNavigation(navButton);
 	}
 
 	@Override
@@ -169,6 +202,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	{
 		overlayManager.remove(tileOverlay);
 		keyManager.unregisterKeyListener(this);
+		if (navButton != null)
+		{
+			clientToolbar.removeNavigation(navButton);
+			navButton = null;
+		}
+		panel = null;
 		tickIndex = 0;
 	}
 
@@ -191,18 +230,53 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			return;
 		}
-		if ("cycleLength".equals(event.getKey()))
+		String key = event.getKey();
+		if ("cycleLength".equals(key))
 		{
 			cycleLengthOverride = -1;
 		}
 		if (config.staticMode())
 		{
 			currentColor = config.staticColor();
+		}
+		else
+		{
+			int cycleLength = getEffectiveCycleLength();
+			tickIndex = tickIndex % cycleLength;
+			currentColor = getColorByIndex(tickIndex);
+		}
+
+		if (panel == null)
+		{
 			return;
 		}
-		int cycleLength = getEffectiveCycleLength();
-		tickIndex = tickIndex % cycleLength;
-		currentColor = getColorByIndex(tickIndex);
+		if ("cycleLength".equals(key) || "staticMode".equals(key))
+		{
+			// Active state changed — panel mirrors active state.
+			SwingUtilities.invokeLater(panel::refreshFromConfig);
+		}
+		else if (key.startsWith(CUSTOM_PALETTE_PREFIX))
+		{
+			// Palette change — only repaint swatches if it matches the cycle
+			// the panel is currently editing. Do NOT snap selection.
+			int n = parsePaletteKey(key);
+			if (n > 0)
+			{
+				SwingUtilities.invokeLater(() -> panel.onPaletteChanged(n));
+			}
+		}
+	}
+
+	private static int parsePaletteKey(String key)
+	{
+		try
+		{
+			return Integer.parseInt(key.substring(CUSTOM_PALETTE_PREFIX.length()));
+		}
+		catch (NumberFormatException e)
+		{
+			return -1;
+		}
 	}
 
 	@Override
@@ -216,11 +290,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			configManager.setConfiguration("chromatick", "staticMode", !config.staticMode());
 		}
 
-		for (int n = 2; n <= 10; n++)
+		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
 			if (getCycleHotkeyByLength(n).matches(e))
 			{
 				cycleLengthOverride = n;
+				if (panel != null)
+				{
+					SwingUtilities.invokeLater(panel::refreshFromConfig);
+				}
 				return;
 			}
 		}
@@ -230,6 +308,10 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			cycleLengthOverride = -1;
 			tickIndex = 0;
 			currentColor = getColorByIndex(0);
+			if (panel != null)
+			{
+				SwingUtilities.invokeLater(panel::refreshFromConfig);
+			}
 		}
 	}
 
@@ -239,6 +321,70 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	public int getEffectiveCycleLength()
 	{
 		return cycleLengthOverride > 0 ? cycleLengthOverride : config.cycleLength();
+	}
+
+	/** Make {@code n} the active cycle, clearing any hotkey override. */
+	void setActiveCycle(int n)
+	{
+		cycleLengthOverride = -1;
+		configManager.setConfiguration("chromatick", "cycleLength", clampCycle(n));
+	}
+
+	void setStaticMode(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "staticMode", on);
+	}
+
+	boolean isStaticMode()
+	{
+		return config.staticMode();
+	}
+
+	// ─── Panel-driven setters for moved settings ────────────────────────
+
+	void setStaticColor(Color c)
+	{
+		configManager.setConfiguration("chromatick", "staticColor", c);
+	}
+
+	void setStaticFillColor(Color c)
+	{
+		configManager.setConfiguration("chromatick", "staticFillColor", c);
+	}
+
+	void setBorderWidth(double w)
+	{
+		configManager.setConfiguration("chromatick", "tileBorderWidth", w);
+	}
+
+	void setEnableFillColor(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "enableFillColor", on);
+	}
+
+	void setFillOpacity(int o)
+	{
+		configManager.setConfiguration("chromatick", "fillOpacity", o);
+	}
+
+	void setDrawBelowPlayer(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "drawBelowPlayer", on);
+	}
+
+	void setPaletteMode(String mode)
+	{
+		configManager.setConfiguration("chromatick", "paletteMode", mode);
+	}
+
+	void setSequentialFill(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "sequentialFill", on);
+	}
+
+	ChromatickConfig getConfig()
+	{
+		return config;
 	}
 
 	private Keybind getCycleHotkeyByLength(int n)
@@ -260,25 +406,70 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	private Color getColorByIndex(int index)
 	{
-		if (config.usePreattentivePalette())
-		{
-			Color[] palette = PALETTES[getEffectiveCycleLength()];
-			return palette[index % palette.length];
-		}
+		Color[] palette = getCustomPaletteForCycle(getEffectiveCycleLength());
+		return palette[index % palette.length];
+	}
 
-		switch (index)
+	// ─── Per-cycle palette storage (consumed by ChromatickPanel) ─────────
+
+	Color[] getCustomPaletteForCycle(int cycleLength)
+	{
+		int n = clampCycle(cycleLength);
+		Color[] defaults = PALETTES[n];
+		String json = configManager.getConfiguration("chromatick", CUSTOM_PALETTE_PREFIX + n);
+		if (json == null || json.isEmpty())
 		{
-			case 0: return config.color1();
-			case 1: return config.color2();
-			case 2: return config.color3();
-			case 3: return config.color4();
-			case 4: return config.color5();
-			case 5: return config.color6();
-			case 6: return config.color7();
-			case 7: return config.color8();
-			case 8: return config.color9();
-			case 9: return config.color10();
-			default: return config.color1();
+			return defaults.clone();
 		}
+		try
+		{
+			List<Integer> rgbs = gson.fromJson(json, PALETTE_TYPE);
+			Color[] result = new Color[n];
+			for (int i = 0; i < n; i++)
+			{
+				if (rgbs != null && i < rgbs.size() && rgbs.get(i) != null)
+				{
+					result[i] = new Color(rgbs.get(i), true);
+				}
+				else
+				{
+					result[i] = defaults[i];
+				}
+			}
+			return result;
+		}
+		catch (Exception e)
+		{
+			log.debug("Failed to parse custom palette for cycle {}: {}", n, e.toString());
+			return defaults.clone();
+		}
+	}
+
+	void setCustomPaletteColor(int cycleLength, int index, Color color)
+	{
+		int n = clampCycle(cycleLength);
+		if (index < 0 || index >= n)
+		{
+			return;
+		}
+		Color[] current = getCustomPaletteForCycle(n);
+		current[index] = color;
+		List<Integer> rgbs = new ArrayList<>(n);
+		for (Color c : current)
+		{
+			rgbs.add(c.getRGB());
+		}
+		configManager.setConfiguration("chromatick", CUSTOM_PALETTE_PREFIX + n, gson.toJson(rgbs));
+	}
+
+	void resetCustomPaletteForCycle(int cycleLength)
+	{
+		int n = clampCycle(cycleLength);
+		configManager.unsetConfiguration("chromatick", CUSTOM_PALETTE_PREFIX + n);
+	}
+
+	private static int clampCycle(int n)
+	{
+		return Math.max(MIN_CYCLE, Math.min(MAX_CYCLE, n));
 	}
 }
