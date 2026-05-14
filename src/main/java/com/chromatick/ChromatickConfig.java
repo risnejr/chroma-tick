@@ -53,23 +53,11 @@ public interface ChromatickConfig extends Config
 		description = "Number of ticks per color cycle (default). Color changes every tick. " +
 			"Set to 4 for a 4-tick weapon, 6 for a 6-tick, etc. " +
 			"Cycle hotkeys override this in-session without updating this slider; " +
-			"Reset Cycle restores it."
+			"Reset Cycle restores it. Pick the colors for each cycle from the sidebar panel."
 	)
 	default int cycleLength()
 	{
 		return 4;
-	}
-
-	@ConfigItem(
-		position = 4,
-		keyName = "usePreattentivePalette",
-		name = "Use Preattentive Palette",
-		description = "Use the built-in perceptually-distinct palette optimized for " +
-			"pop-out effect. Disable to use your own custom colors."
-	)
-	default boolean usePreattentivePalette()
-	{
-		return true;
 	}
 
 	// ─── Tile Overlay ─────────────────────────────────────────────────────
@@ -276,146 +264,5 @@ public interface ChromatickConfig extends Config
 	default Keybind cycle10Hotkey()
 	{
 		return Keybind.NOT_SET;
-	}
-
-	// ─── Custom Colors ────────────────────────────────────────────────────
-	// Only used when "Use Preattentive Palette" is disabled.
-
-	@ConfigSection(
-		name = "Custom Colors",
-		description = "Custom colors to cycle through (only used when preattentive palette is disabled)",
-		position = 7,
-		closedByDefault = true
-	)
-	String colorSettings = "colorSettings";
-
-	@Alpha
-	@ConfigItem(
-		position = 1,
-		keyName = "color1",
-		name = "Color 1",
-		description = "First color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color1()
-	{
-		return new Color(0, 200, 83);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 2,
-		keyName = "color2",
-		name = "Color 2",
-		description = "Second color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color2()
-	{
-		return new Color(41, 121, 255);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 3,
-		keyName = "color3",
-		name = "Color 3",
-		description = "Third color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color3()
-	{
-		return new Color(255, 196, 0);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 4,
-		keyName = "color4",
-		name = "Color 4",
-		description = "Fourth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color4()
-	{
-		return new Color(213, 0, 0);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 5,
-		keyName = "color5",
-		name = "Color 5",
-		description = "Fifth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color5()
-	{
-		return new Color(170, 0, 255);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 6,
-		keyName = "color6",
-		name = "Color 6",
-		description = "Sixth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color6()
-	{
-		return new Color(0, 229, 255);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 7,
-		keyName = "color7",
-		name = "Color 7",
-		description = "Seventh color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color7()
-	{
-		return new Color(255, 109, 0);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 8,
-		keyName = "color8",
-		name = "Color 8",
-		description = "Eighth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color8()
-	{
-		return new Color(255, 255, 255);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 9,
-		keyName = "color9",
-		name = "Color 9",
-		description = "Ninth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color9()
-	{
-		return new Color(160, 64, 255);
-	}
-
-	@Alpha
-	@ConfigItem(
-		position = 10,
-		keyName = "color10",
-		name = "Color 10",
-		description = "Tenth color in the cycle",
-		section = "colorSettings"
-	)
-	default Color color10()
-	{
-		return new Color(224, 64, 192);
 	}
 }
