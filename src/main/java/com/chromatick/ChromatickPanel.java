@@ -185,12 +185,6 @@ class ChromatickPanel extends PluginPanel
 		pickerHeader.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
 		pickerHeader.add(sectionLabel("Palette"), BorderLayout.WEST);
 		pickerToggle = new PillToggle(new String[]{"Grid", "Wheel"});
-		pickerToggle.addListener(idx -> {
-			String mode = idx == 0 ? CARD_GRID : CARD_WHEEL;
-			plugin.setPaletteMode(mode);
-			((CardLayout) pickerCard.getLayout()).show(pickerCard, mode);
-			syncPickerToEditingSlot();
-		});
 		pickerHeader.add(pickerToggle, BorderLayout.EAST);
 		content.add(pickerHeader);
 		content.add(Box.createVerticalStrut(4));
@@ -210,6 +204,14 @@ class ChromatickPanel extends PluginPanel
 		pickerCard.add(centerWrap(wheel), CARD_WHEEL);
 		content.add(pickerCard);
 		content.add(Box.createVerticalStrut(4));
+
+		// pickerToggle listener wired AFTER pickerCard is assigned (definite-assignment rule)
+		pickerToggle.addListener(idx -> {
+			String mode = idx == 0 ? CARD_GRID : CARD_WHEEL;
+			plugin.setPaletteMode(mode);
+			((CardLayout) pickerCard.getLayout()).show(pickerCard, mode);
+			syncPickerToEditingSlot();
+		});
 
 		// Hex + sequential fill on one row
 		JPanel underPicker = new JPanel(new BorderLayout());
@@ -240,15 +242,17 @@ class ChromatickPanel extends PluginPanel
 		appearanceBody.add(labeledRow("Border width", borderWidthSlider));
 
 		fillEnableBox = themedCheckBox("Fill tile");
-		fillEnableBox.addActionListener(e -> {
-			plugin.setEnableFillColor(fillEnableBox.isSelected());
-			fillOpacitySlider.setEnabled(fillEnableBox.isSelected());
-		});
 		appearanceBody.add(fillEnableBox);
 
 		fillOpacitySlider = themedSlider(0, 255);
 		fillOpacitySlider.addChangeListener(e -> plugin.setFillOpacity(fillOpacitySlider.getValue()));
 		appearanceBody.add(labeledRow("Fill opacity", fillOpacitySlider));
+
+		// Wired AFTER fillOpacitySlider is assigned (definite-assignment rule)
+		fillEnableBox.addActionListener(e -> {
+			plugin.setEnableFillColor(fillEnableBox.isSelected());
+			fillOpacitySlider.setEnabled(fillEnableBox.isSelected());
+		});
 
 		drawBelowBox = themedCheckBox("Draw below player");
 		drawBelowBox.setToolTipText("Requires GPU rendering mode in RuneLite settings");
