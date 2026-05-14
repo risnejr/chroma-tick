@@ -16,9 +16,13 @@ import java.util.function.Consumer;
 import javax.swing.JPanel;
 
 /**
- * Discrete swatch wheel: 12 hue wedges × 3 saturation/value rings (36 chips),
- * plus a 5-cell grayscale row below. Clicking a chip fires a Color event and
- * commits immediately (no drag). Optimized for rapid sequential picking.
+ * Discrete swatch wheel: 12 hue wedges × 3 concentric rings (36 chips) plus a
+ * 5-cell grayscale row below. The 12 hues come from a hand-tuned artist wheel
+ * (Red → Red-Orange → Orange → Amber → Yellow → Chartreuse → Green → Teal →
+ * Cyan → Blue → Indigo → Magenta) rather than evenly-stepped HSV, which gives
+ * a perceptually smooth gradient around the rim. Each inner ring blends the
+ * base hue toward white. Clicking a chip fires a Color event and commits
+ * immediately (no drag). Optimized for rapid sequential picking.
  */
 class DiscretePalette extends JPanel
 {
@@ -29,19 +33,46 @@ class DiscretePalette extends JPanel
 	private static final int GRAY_HEIGHT = 24;
 
 	// Ring boundaries (outermost first). Small radial gaps make the chips read as separate.
+	// The innermost ring extends to the centre (R_INNER[2] = 0) so there is no dead hole.
 	private static final int[] R_OUTER = {96, 68, 40};
-	private static final int[] R_INNER = {72, 44, 16};
-	// (S, V) per ring: outer = pure hue; inner rings add white (lower S, V stays high).
-	// Vivid on the rim, fading to near-white at the center.
-	private static final float[][] RING_SV = {
-		{1.00f, 1.00f},
-		{0.66f, 1.00f},
-		{0.33f, 1.00f},
+	private static final int[] R_INNER = {72, 44, 0};
+
+	// Hand-tuned 12-step artist wheel (Red → Magenta, CW). Hues are positioned
+	// the way painters' wheels do — proper red-orange, amber, chartreuse, teal,
+	// indigo, etc. — instead of HSV's perceptually-lopsided uniform stepping.
+	private static final Color[] HUES = {
+		new Color(255, 64, 64),   // 0  red
+		new Color(255, 104, 40),  // 1  red-orange
+		new Color(255, 144, 32),  // 2  orange
+		new Color(255, 192, 32),  // 3  amber
+		new Color(255, 224, 32),  // 4  yellow
+		new Color(192, 224, 32),  // 5  chartreuse
+		new Color(64, 224, 64),   // 6  green
+		new Color(64, 220, 160),  // 7  teal
+		new Color(64, 224, 224),  // 8  cyan
+		new Color(64, 128, 255),  // 9  blue
+		new Color(128, 64, 255),  // 10 indigo
+		new Color(224, 64, 192),  // 11 magenta
 	};
-	private static final float WEDGE_DEG = 360f / WEDGES;
+
+	// White-blend amount per ring: rim = pure, middle = 40% white, inner = 65% white.
+	// Matches the reference's "wash to the centre" curve.
+	private static final float[] WHITE_BLEND = {0.00f, 0.40f, 0.65f};
+
+	private static final float WEDGE_DEG = 360f / HUES.length;
 	private static final float WEDGE_GAP_DEG = 2f;
 
 	private static final int[] GRAYS = {16, 80, 144, 200, 240};
+
+	private static Color chipColor(int wedge, int ring)
+	{
+		Color base = HUES[((wedge % HUES.length) + HUES.length) % HUES.length];
+		float t = WHITE_BLEND[ring];
+		int r = Math.round(base.getRed() * (1 - t) + 255 * t);
+		int g = Math.round(base.getGreen() * (1 - t) + 255 * t);
+		int b = Math.round(base.getBlue() * (1 - t) + 255 * t);
+		return new Color(r, g, b);
+	}
 
 	private final List<Consumer<Color>> listeners = new ArrayList<>();
 	private final List<Runnable> commitListeners = new ArrayList<>();
@@ -127,17 +158,13 @@ class DiscretePalette extends JPanel
 			return null;
 		}
 
-		// Convert atan2 to "hue angle" measured CW from top (matches the
-		// continuous wheel's orientation: red at top, hue increases CW).
+		// Convert atan2 to "hue angle" measured CW from top: red at top, hue index increases CW.
 		double a = Math.atan2(dy, dx);
 		double hueAngle = a + Math.PI / 2;
 		hueAngle = ((hueAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
 		int wedge = (int) Math.floor((hueAngle + Math.PI / WEDGES) / (2 * Math.PI / WEDGES)) % WEDGES;
 
-		float hue = (float) wedge / WEDGES;
-		float sat = RING_SV[ring][0];
-		float val = RING_SV[ring][1];
-		return Color.getHSBColor(hue, sat, val);
+		return chipColor(wedge, ring);
 	}
 
 	@Override
@@ -153,13 +180,10 @@ class DiscretePalette extends JPanel
 		{
 			int outer = R_OUTER[ring];
 			int inner = R_INNER[ring];
-			float sat = RING_SV[ring][0];
-			float val = RING_SV[ring][1];
 
 			for (int w = 0; w < WEDGES; w++)
 			{
-				float hue = (float) w / WEDGES;
-				g2.setColor(Color.getHSBColor(hue, sat, val));
+				g2.setColor(chipColor(w, ring));
 				// Wedge centered on screen-CW angle: wedge 0 = up.
 				// Java arc: 0° = east, positive = CCW (visually).
 				float centerJavaDeg = 90f - w * WEDGE_DEG;
@@ -170,8 +194,13 @@ class DiscretePalette extends JPanel
 			}
 
 			// Punch the inner radius with the parent background to leave a radial gap.
-			g2.setColor(getParent() != null ? getParent().getBackground() : Color.BLACK);
-			g2.fillOval(CX - inner, CY - inner, inner * 2, inner * 2);
+			// For the innermost ring inner=0, so this is a no-op and the wedges
+			// meet at the centre — closing the hole.
+			if (inner > 0)
+			{
+				g2.setColor(getParent() != null ? getParent().getBackground() : Color.BLACK);
+				g2.fillOval(CX - inner, CY - inner, inner * 2, inner * 2);
+			}
 		}
 
 		// Grayscale row
