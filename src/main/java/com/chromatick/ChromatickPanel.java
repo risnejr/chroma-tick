@@ -21,6 +21,9 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
+import javax.swing.JSpinner;
+import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.ColorScheme;
@@ -74,9 +77,13 @@ class ChromatickPanel extends PluginPanel
 	// Appearance
 	private final CollapsibleSection appearanceSection;
 	private final JSlider borderWidthSlider;
+	private final JSpinner borderWidthSpinner;
 	private final JCheckBox fillEnableBox;
 	private final JSlider fillOpacitySlider;
+	private final JSpinner fillOpacitySpinner;
 	private final JCheckBox drawBelowBox;
+	private boolean syncingBorderWidth;
+	private boolean syncingOpacity;
 
 	private int selectedCycle;
 	private Slot editing;
@@ -238,20 +245,46 @@ class ChromatickPanel extends PluginPanel
 		appearanceBody.setBackground(getBackground());
 
 		borderWidthSlider = themedSlider(1, 5);
-		borderWidthSlider.addChangeListener(e -> plugin.setBorderWidth(borderWidthSlider.getValue()));
-		appearanceBody.add(labeledRow("Border width", borderWidthSlider));
+		borderWidthSpinner = numberSpinner(2, 1, 5);
+		borderWidthSlider.addChangeListener(e -> {
+			if (syncingBorderWidth) return;
+			int v = borderWidthSlider.getValue();
+			setBorderWidthControls(v);
+			plugin.setBorderWidth(v);
+		});
+		borderWidthSpinner.addChangeListener(e -> {
+			if (syncingBorderWidth) return;
+			int v = (Integer) borderWidthSpinner.getValue();
+			setBorderWidthControls(v);
+			plugin.setBorderWidth(v);
+		});
+		appearanceBody.add(labeledRowWithSpinner("Border width", borderWidthSlider, borderWidthSpinner, "px"));
 
 		fillEnableBox = themedCheckBox("Fill tile");
 		appearanceBody.add(fillEnableBox);
 
 		fillOpacitySlider = themedSlider(0, 255);
-		fillOpacitySlider.addChangeListener(e -> plugin.setFillOpacity(fillOpacitySlider.getValue()));
-		appearanceBody.add(labeledRow("Fill opacity", fillOpacitySlider));
+		fillOpacitySpinner = numberSpinner(20, 0, 100);
+		fillOpacitySlider.addChangeListener(e -> {
+			if (syncingOpacity) return;
+			int v = fillOpacitySlider.getValue();
+			setOpacityControls(v);
+			plugin.setFillOpacity(v);
+		});
+		fillOpacitySpinner.addChangeListener(e -> {
+			if (syncingOpacity) return;
+			int pct = (Integer) fillOpacitySpinner.getValue();
+			int v = Math.round(pct * 2.55f);
+			setOpacityControls(v);
+			plugin.setFillOpacity(v);
+		});
+		appearanceBody.add(labeledRowWithSpinner("Fill opacity", fillOpacitySlider, fillOpacitySpinner, "%"));
 
-		// Wired AFTER fillOpacitySlider is assigned (definite-assignment rule)
+		// Wired AFTER fillOpacitySlider/fillOpacitySpinner are assigned
 		fillEnableBox.addActionListener(e -> {
 			plugin.setEnableFillColor(fillEnableBox.isSelected());
 			fillOpacitySlider.setEnabled(fillEnableBox.isSelected());
+			fillOpacitySpinner.setEnabled(fillEnableBox.isSelected());
 		});
 
 		drawBelowBox = themedCheckBox("Draw below player");
@@ -271,10 +304,11 @@ class ChromatickPanel extends PluginPanel
 		pickerToggle.setSelected(CARD_WHEEL.equals(cfg.paletteMode()) ? 1 : 0);
 		((CardLayout) pickerCard.getLayout()).show(pickerCard, cfg.paletteMode());
 		sequentialFill.setSelected(cfg.sequentialFill());
-		borderWidthSlider.setValue((int) Math.round(cfg.tileBorderWidth()));
+		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
 		fillEnableBox.setSelected(cfg.enableFillColor());
-		fillOpacitySlider.setValue(cfg.fillOpacity());
+		setOpacityControls(cfg.fillOpacity());
 		fillOpacitySlider.setEnabled(cfg.enableFillColor());
+		fillOpacitySpinner.setEnabled(cfg.enableFillColor());
 		drawBelowBox.setSelected(cfg.drawBelowPlayer());
 
 		selectedCycle = clampCycle(plugin.getEffectiveCycleLength());
@@ -310,10 +344,11 @@ class ChromatickPanel extends PluginPanel
 		staticFillSwatch.setColor(cfg.staticFillColor());
 
 		// Appearance values may have changed externally
-		borderWidthSlider.setValue((int) Math.round(cfg.tileBorderWidth()));
+		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
 		fillEnableBox.setSelected(cfg.enableFillColor());
-		fillOpacitySlider.setValue(cfg.fillOpacity());
+		setOpacityControls(cfg.fillOpacity());
 		fillOpacitySlider.setEnabled(cfg.enableFillColor());
+		fillOpacitySpinner.setEnabled(cfg.enableFillColor());
 		drawBelowBox.setSelected(cfg.drawBelowPlayer());
 	}
 
@@ -525,6 +560,69 @@ class ChromatickPanel extends PluginPanel
 		row.add(l, BorderLayout.WEST);
 		row.add(slider, BorderLayout.CENTER);
 		return row;
+	}
+
+	private JSpinner numberSpinner(int value, int min, int max)
+	{
+		JSpinner s = new JSpinner(new SpinnerNumberModel(value, min, max, 1));
+		JSpinner.DefaultEditor editor = (JSpinner.DefaultEditor) s.getEditor();
+		editor.getTextField().setColumns(3);
+		editor.getTextField().setHorizontalAlignment(JTextField.CENTER);
+		return s;
+	}
+
+	private JPanel labeledRowWithSpinner(String label, JSlider slider, JSpinner spinner, String suffix)
+	{
+		JPanel row = new JPanel(new BorderLayout(4, 0));
+		row.setBackground(getBackground());
+		row.setAlignmentX(LEFT_ALIGNMENT);
+		JLabel l = new JLabel(label);
+		l.setFont(FontManager.getRunescapeSmallFont());
+		l.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		l.setPreferredSize(new Dimension(70, 16));
+		row.add(l, BorderLayout.WEST);
+		row.add(slider, BorderLayout.CENTER);
+
+		JPanel right = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+		right.setBackground(getBackground());
+		right.add(spinner);
+		if (suffix != null && !suffix.isEmpty())
+		{
+			JLabel sx = new JLabel(suffix);
+			sx.setFont(FontManager.getRunescapeSmallFont());
+			sx.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			right.add(sx);
+		}
+		row.add(right, BorderLayout.EAST);
+		return row;
+	}
+
+	private void setBorderWidthControls(int v)
+	{
+		syncingBorderWidth = true;
+		try
+		{
+			borderWidthSlider.setValue(v);
+			borderWidthSpinner.setValue(v);
+		}
+		finally
+		{
+			syncingBorderWidth = false;
+		}
+	}
+
+	private void setOpacityControls(int v)
+	{
+		syncingOpacity = true;
+		try
+		{
+			fillOpacitySlider.setValue(v);
+			fillOpacitySpinner.setValue(Math.round(v / 2.55f));
+		}
+		finally
+		{
+			syncingOpacity = false;
+		}
 	}
 
 	// ─── Slot abstraction ────────────────────────────────────────────────

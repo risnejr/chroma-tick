@@ -58,19 +58,15 @@ public class ChromatickOverlay extends Overlay
 
 		if (config.enableFillColor())
 		{
-			if (config.staticMode())
-			{
-				fillColor = config.staticFillColor();
-			}
-			else
-			{
-				fillColor = new Color(
-					borderColor.getRed(),
-					borderColor.getGreen(),
-					borderColor.getBlue(),
-					config.fillOpacity()
-				);
-			}
+			// fillOpacity is the single source of truth for fill alpha in both modes.
+			// In static mode the static-fill swatch only contributes RGB.
+			final Color fillRgb = config.staticMode() ? config.staticFillColor() : borderColor;
+			fillColor = new Color(
+				fillRgb.getRed(),
+				fillRgb.getGreen(),
+				fillRgb.getBlue(),
+				config.fillOpacity()
+			);
 		}
 		else
 		{
