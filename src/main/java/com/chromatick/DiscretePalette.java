@@ -16,13 +16,11 @@ import java.util.function.Consumer;
 import javax.swing.JPanel;
 
 /**
- * Discrete swatch wheel: 12 hue wedges × 3 concentric rings (36 chips) plus a
- * 5-cell grayscale row below. The 12 hues come from a hand-tuned artist wheel
- * (Red → Red-Orange → Orange → Amber → Yellow → Chartreuse → Green → Teal →
- * Cyan → Blue → Indigo → Magenta) rather than evenly-stepped HSV, which gives
- * a perceptually smooth gradient around the rim. Each inner ring blends the
- * base hue toward white. Clicking a chip fires a Color event and commits
- * immediately (no drag). Optimized for rapid sequential picking.
+ * Discrete swatch wheel: 12 hue wedges × 3 saturation rings (36 chips) plus a
+ * 5-cell grayscale row below. Hues are evenly-stepped HSV; each inner ring
+ * reduces saturation toward white. The innermost ring fills the centre — no
+ * dead hole. Clicking a chip fires a Color event and commits immediately
+ * (no drag). Optimized for rapid sequential picking.
  */
 class DiscretePalette extends JPanel
 {
@@ -37,41 +35,25 @@ class DiscretePalette extends JPanel
 	private static final int[] R_OUTER = {96, 68, 40};
 	private static final int[] R_INNER = {72, 44, 0};
 
-	// Hand-tuned 12-step artist wheel (Red → Magenta, CW). Hues are positioned
-	// the way painters' wheels do — proper red-orange, amber, chartreuse, teal,
-	// indigo, etc. — instead of HSV's perceptually-lopsided uniform stepping.
-	private static final Color[] HUES = {
-		new Color(255, 64, 64),   // 0  red
-		new Color(255, 104, 40),  // 1  red-orange
-		new Color(255, 144, 32),  // 2  orange
-		new Color(255, 192, 32),  // 3  amber
-		new Color(255, 224, 32),  // 4  yellow
-		new Color(192, 224, 32),  // 5  chartreuse
-		new Color(64, 224, 64),   // 6  green
-		new Color(64, 220, 160),  // 7  teal
-		new Color(64, 224, 224),  // 8  cyan
-		new Color(64, 128, 255),  // 9  blue
-		new Color(128, 64, 255),  // 10 indigo
-		new Color(224, 64, 192),  // 11 magenta
+	// (S, V) per ring: outer = pure hue; inner rings add white (lower S, V stays high).
+	// Vivid on the rim, fading to near-white at the centre.
+	private static final float[][] RING_SV = {
+		{1.00f, 1.00f},
+		{0.66f, 1.00f},
+		{0.33f, 1.00f},
 	};
 
-	// White-blend amount per ring: rim = pure, middle = 40% white, inner = 65% white.
-	// Matches the reference's "wash to the centre" curve.
-	private static final float[] WHITE_BLEND = {0.00f, 0.40f, 0.65f};
-
-	private static final float WEDGE_DEG = 360f / HUES.length;
+	private static final float WEDGE_DEG = 360f / WEDGES;
 	private static final float WEDGE_GAP_DEG = 2f;
 
 	private static final int[] GRAYS = {16, 80, 144, 200, 240};
 
 	private static Color chipColor(int wedge, int ring)
 	{
-		Color base = HUES[((wedge % HUES.length) + HUES.length) % HUES.length];
-		float t = WHITE_BLEND[ring];
-		int r = Math.round(base.getRed() * (1 - t) + 255 * t);
-		int g = Math.round(base.getGreen() * (1 - t) + 255 * t);
-		int b = Math.round(base.getBlue() * (1 - t) + 255 * t);
-		return new Color(r, g, b);
+		float hue = (float) (((wedge % WEDGES) + WEDGES) % WEDGES) / WEDGES;
+		float sat = RING_SV[ring][0];
+		float val = RING_SV[ring][1];
+		return Color.getHSBColor(hue, sat, val);
 	}
 
 	private final List<Consumer<Color>> listeners = new ArrayList<>();
