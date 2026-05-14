@@ -230,7 +230,8 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			return;
 		}
-		if ("cycleLength".equals(event.getKey()))
+		String key = event.getKey();
+		if ("cycleLength".equals(key))
 		{
 			cycleLengthOverride = -1;
 		}
@@ -245,11 +246,36 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			currentColor = getColorByIndex(tickIndex);
 		}
 
-		// Sync panel when palette or cycle length changes externally
-		if (panel != null
-			&& (event.getKey().startsWith(CUSTOM_PALETTE_PREFIX) || "cycleLength".equals(event.getKey())))
+		if (panel == null)
 		{
+			return;
+		}
+		if ("cycleLength".equals(key) || "staticMode".equals(key))
+		{
+			// Active state changed — panel mirrors active state.
 			SwingUtilities.invokeLater(panel::refreshFromConfig);
+		}
+		else if (key.startsWith(CUSTOM_PALETTE_PREFIX))
+		{
+			// Palette change — only repaint swatches if it matches the cycle
+			// the panel is currently editing. Do NOT snap selection.
+			int n = parsePaletteKey(key);
+			if (n > 0)
+			{
+				SwingUtilities.invokeLater(() -> panel.onPaletteChanged(n));
+			}
+		}
+	}
+
+	private static int parsePaletteKey(String key)
+	{
+		try
+		{
+			return Integer.parseInt(key.substring(CUSTOM_PALETTE_PREFIX.length()));
+		}
+		catch (NumberFormatException e)
+		{
+			return -1;
 		}
 	}
 
@@ -295,6 +321,70 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	public int getEffectiveCycleLength()
 	{
 		return cycleLengthOverride > 0 ? cycleLengthOverride : config.cycleLength();
+	}
+
+	/** Make {@code n} the active cycle, clearing any hotkey override. */
+	void setActiveCycle(int n)
+	{
+		cycleLengthOverride = -1;
+		configManager.setConfiguration("chromatick", "cycleLength", clampCycle(n));
+	}
+
+	void setStaticMode(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "staticMode", on);
+	}
+
+	boolean isStaticMode()
+	{
+		return config.staticMode();
+	}
+
+	// ─── Panel-driven setters for moved settings ────────────────────────
+
+	void setStaticColor(Color c)
+	{
+		configManager.setConfiguration("chromatick", "staticColor", c);
+	}
+
+	void setStaticFillColor(Color c)
+	{
+		configManager.setConfiguration("chromatick", "staticFillColor", c);
+	}
+
+	void setBorderWidth(double w)
+	{
+		configManager.setConfiguration("chromatick", "tileBorderWidth", w);
+	}
+
+	void setEnableFillColor(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "enableFillColor", on);
+	}
+
+	void setFillOpacity(int o)
+	{
+		configManager.setConfiguration("chromatick", "fillOpacity", o);
+	}
+
+	void setDrawBelowPlayer(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "drawBelowPlayer", on);
+	}
+
+	void setPaletteMode(String mode)
+	{
+		configManager.setConfiguration("chromatick", "paletteMode", mode);
+	}
+
+	void setSequentialFill(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "sequentialFill", on);
+	}
+
+	ChromatickConfig getConfig()
+	{
+		return config;
 	}
 
 	private Keybind getCycleHotkeyByLength(int n)
