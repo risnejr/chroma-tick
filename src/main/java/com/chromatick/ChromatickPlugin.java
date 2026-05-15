@@ -271,7 +271,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		}
 	}
 
-	private static int parsePaletteKey(String key)
+	static int parsePaletteKey(String key)
 	{
 		try
 		{
@@ -576,7 +576,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		configManager.unsetConfiguration("chromatick", CUSTOM_PALETTE_PREFIX + n);
 	}
 
-	private static int clampCycle(int n)
+	static int clampCycle(int n)
 	{
 		return Math.max(MIN_CYCLE, Math.min(MAX_CYCLE, n));
 	}
