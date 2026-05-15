@@ -78,6 +78,99 @@ public interface ChromatickConfig extends Config
 		return true;
 	}
 
+	// ─── HUD overlay (chatbubble metronome) ─────────────────────────────
+
+	/** "tile" · "hud" · "both" — where the tick visualization renders. */
+	@ConfigItem(keyName = "displayMode", name = "", description = "", hidden = true)
+	default String displayMode()
+	{
+		return "tile";
+	}
+
+	/** "dots" · "numbers" — glyph style inside the HUD frame. */
+	@ConfigItem(keyName = "hudGlyph", name = "", description = "", hidden = true)
+	default String hudGlyph()
+	{
+		return "dots";
+	}
+
+	/** 50–400, where 100 = native size. */
+	@ConfigItem(keyName = "hudScale", name = "", description = "", hidden = true)
+	default int hudScale()
+	{
+		return 200;
+	}
+
+	/** 0–100 opacity for the current tick. */
+	@ConfigItem(keyName = "hudActiveOpacity", name = "", description = "", hidden = true)
+	default int hudActiveOpacity()
+	{
+		return 100;
+	}
+
+	/** 0–100 opacity for the non-current ticks. */
+	@ConfigItem(keyName = "hudInactiveOpacity", name = "", description = "", hidden = true)
+	default int hudInactiveOpacity()
+	{
+		return 40;
+	}
+
+	/** Active glyph rendered in bold (Numbers variant only). */
+	@ConfigItem(keyName = "hudBold", name = "", description = "", hidden = true)
+	default boolean hudBold()
+	{
+		return false;
+	}
+
+	/** 0–200 extra-scale (%) on the active glyph; layout cells reserve space so siblings never shift. */
+	@ConfigItem(keyName = "hudPop", name = "", description = "", hidden = true)
+	default int hudPop()
+	{
+		return 0;
+	}
+
+	/** Pixel gap between glyphs at scale=100. Scales with hudScale. Negative = overlap. */
+	@ConfigItem(keyName = "hudSpacing", name = "", description = "", hidden = true)
+	default int hudSpacing()
+	{
+		return 0;
+	}
+
+	/** Stack glyphs top-to-bottom instead of left-to-right. */
+	@ConfigItem(keyName = "hudVertical", name = "", description = "", hidden = true)
+	default boolean hudVertical()
+	{
+		return false;
+	}
+
+	/** "head" · "feet" · "none" — where the HUD anchors to the player model. */
+	@ConfigItem(keyName = "hudAnchorTarget", name = "", description = "", hidden = true)
+	default String hudAnchorTarget()
+	{
+		return "feet";
+	}
+
+	/** Vertical offset (canvas px) from the anchor point to the HUD bar's center. */
+	@ConfigItem(keyName = "hudVerticalOffset", name = "", description = "", hidden = true)
+	default int hudVerticalOffset()
+	{
+		return 30;
+	}
+
+	/** Horizontal offset (canvas px) from the anchor point to the HUD bar's center. */
+	@ConfigItem(keyName = "hudHorizontalOffset", name = "", description = "", hidden = true)
+	default int hudHorizontalOffset()
+	{
+		return 0;
+	}
+
+	/** Render a single glyph that cycles color/number in place instead of a row of all ticks. */
+	@ConfigItem(keyName = "hudCycleInPlace", name = "", description = "", hidden = true)
+	default boolean hudCycleInPlace()
+	{
+		return false;
+	}
+
 	// ─── Hotkeys ──────────────────────────────────────────────────────────
 
 	@ConfigSection(

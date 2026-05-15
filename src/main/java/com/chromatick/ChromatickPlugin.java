@@ -150,6 +150,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
+	private ChromatickHudOverlay hudOverlay;
+
+	@Inject
 	private OverlayManager overlayManager;
 
 	@Inject
@@ -181,7 +184,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	@Override
 	protected void startUp() throws Exception
 	{
-		overlayManager.add(tileOverlay);
+		applyDisplayMode();
 		keyManager.registerKeyListener(this);
 		tickIndex = 0;
 		cycleLengthOverride = -1;
@@ -201,6 +204,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	protected void shutDown() throws Exception
 	{
 		overlayManager.remove(tileOverlay);
+		overlayManager.remove(hudOverlay);
 		keyManager.unregisterKeyListener(this);
 		if (navButton != null)
 		{
@@ -211,16 +215,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		tickIndex = 0;
 	}
 
+
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
-		if (config.staticMode())
-		{
-			return;
-		}
+		// Static mode freezes the *color*, not the cycle. The HUD overlay still
+		// uses tickIndex to advance its active-glyph highlight.
 		int cycleLength = getEffectiveCycleLength();
 		tickIndex = (tickIndex + 1) % cycleLength;
-		currentColor = getColorByIndex(tickIndex);
+		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
 	}
 
 	@Subscribe
@@ -235,24 +238,25 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			cycleLengthOverride = -1;
 		}
-		if (config.staticMode())
+		int cycleLength = getEffectiveCycleLength();
+		tickIndex = tickIndex % cycleLength;
+		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+
+		if ("displayMode".equals(key))
 		{
-			currentColor = config.staticColor();
-		}
-		else
-		{
-			int cycleLength = getEffectiveCycleLength();
-			tickIndex = tickIndex % cycleLength;
-			currentColor = getColorByIndex(tickIndex);
+			applyDisplayMode();
 		}
 
 		if (panel == null)
 		{
 			return;
 		}
-		if ("cycleLength".equals(key) || "staticMode".equals(key))
+		if ("cycleLength".equals(key) || "staticMode".equals(key) || "displayMode".equals(key)
+			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key))
 		{
-			// Active state changed — panel mirrors active state.
+			// Active state changed — panel mirrors active state. hudAnchorTarget is
+			// here so the panel pill toggle flips to "None" when the overlay
+			// self-unpins on alt+drag.
 			SwingUtilities.invokeLater(panel::refreshFromConfig);
 		}
 		else if (key.startsWith(CUSTOM_PALETTE_PREFIX))
@@ -307,7 +311,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			cycleLengthOverride = -1;
 			tickIndex = 0;
-			currentColor = getColorByIndex(0);
+			currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
 			if (panel != null)
 			{
 				SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -380,6 +384,110 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	void setSequentialFill(boolean on)
 	{
 		configManager.setConfiguration("chromatick", "sequentialFill", on);
+	}
+
+	// ─── HUD overlay setters ────────────────────────────────────────────
+
+	void setDisplayMode(String mode)
+	{
+		configManager.setConfiguration("chromatick", "displayMode", mode);
+	}
+
+	void setHudGlyph(String glyph)
+	{
+		configManager.setConfiguration("chromatick", "hudGlyph", glyph);
+	}
+
+	void setHudScale(int pct)
+	{
+		configManager.setConfiguration("chromatick", "hudScale", pct);
+	}
+
+	void setHudActiveOpacity(int pct)
+	{
+		configManager.setConfiguration("chromatick", "hudActiveOpacity", pct);
+	}
+
+	void setHudInactiveOpacity(int pct)
+	{
+		configManager.setConfiguration("chromatick", "hudInactiveOpacity", pct);
+	}
+
+	void setHudBold(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "hudBold", on);
+	}
+
+	void setHudPop(int pct)
+	{
+		configManager.setConfiguration("chromatick", "hudPop", pct);
+	}
+
+	void setHudSpacing(int px)
+	{
+		configManager.setConfiguration("chromatick", "hudSpacing", px);
+	}
+
+	void setHudVertical(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "hudVertical", on);
+	}
+
+	/**
+	 * Set the anchor target. When switching to head/feet we also clear the
+	 * overlay's drag-tracking state so it re-positions cleanly on the next
+	 * frame. Switching to "none" preserves the current position.
+	 */
+	void setHudAnchorTarget(String target)
+	{
+		configManager.setConfiguration("chromatick", "hudAnchorTarget", target);
+		if (!"none".equals(target))
+		{
+			hudOverlay.clearDragState();
+		}
+	}
+
+	void setHudVerticalOffset(int px)
+	{
+		configManager.setConfiguration("chromatick", "hudVerticalOffset", px);
+	}
+
+	void setHudHorizontalOffset(int px)
+	{
+		configManager.setConfiguration("chromatick", "hudHorizontalOffset", px);
+	}
+
+	void setHudCycleInPlace(boolean on)
+	{
+		configManager.setConfiguration("chromatick", "hudCycleInPlace", on);
+	}
+
+	private void applyDisplayMode()
+	{
+		String mode = config.displayMode();
+		boolean tile = "tile".equals(mode) || "both".equals(mode);
+		boolean hud  = "hud".equals(mode)  || "both".equals(mode);
+		// Default to tile if config value is unrecognised (forward-compat).
+		if (!tile && !hud)
+		{
+			tile = true;
+		}
+		if (tile)
+		{
+			overlayManager.add(tileOverlay);
+		}
+		else
+		{
+			overlayManager.remove(tileOverlay);
+		}
+		if (hud)
+		{
+			overlayManager.add(hudOverlay);
+		}
+		else
+		{
+			overlayManager.remove(hudOverlay);
+		}
 	}
 
 	ChromatickConfig getConfig()
