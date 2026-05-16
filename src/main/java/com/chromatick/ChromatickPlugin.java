@@ -483,6 +483,16 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		return config;
 	}
 
+	/**
+	 * Immutable view-state for the sidebar panel. Captures all settings + the
+	 * runtime-resolved effective cycle length in a single read, so the panel
+	 * doesn't reach into config directly.
+	 */
+	ChromatickPanelSnapshot snapshot()
+	{
+		return ChromatickPanelSnapshot.from(config, getEffectiveCycleLength());
+	}
+
 	private Keybind getCycleHotkeyByLength(int n)
 	{
 		switch (n)
