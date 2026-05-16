@@ -171,6 +171,29 @@ public interface ChromatickConfig extends Config
 		return false;
 	}
 
+	// ─── Per-tick prayer recorder ───────────────────────────────────────
+
+	/** Recorder state: OFF, ARM (waits for movement) or ALWAYS (every tick). */
+	@ConfigItem(keyName = "recordMode", name = "", description = "", hidden = true)
+	default RecordMode recordMode()
+	{
+		return RecordMode.OFF;
+	}
+
+	/** Icon band placement relative to the HUD row. */
+	@ConfigItem(keyName = "recordIconPosition", name = "", description = "", hidden = true)
+	default IconPosition recordIconPosition()
+	{
+		return IconPosition.ABOVE;
+	}
+
+	/** In ARM mode, total ticks to capture (movement tick + N-1 more). 1..10. */
+	@ConfigItem(keyName = "recordArmTicks", name = "", description = "", hidden = true)
+	default int recordArmTicks()
+	{
+		return 2;
+	}
+
 	// ─── Hotkeys ──────────────────────────────────────────────────────────
 
 	@ConfigSection(
@@ -309,6 +332,18 @@ public interface ChromatickConfig extends Config
 		section = "hotkeySettings"
 	)
 	default Keybind cycle10Hotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		position = 12,
+		keyName = "recordModeHotkey",
+		name = "Cycle Recorder Mode",
+		description = "Cycle the per-tick prayer recorder through OFF, ARM and ALWAYS",
+		section = "hotkeySettings"
+	)
+	default Keybind recordModeHotkey()
 	{
 		return Keybind.NOT_SET;
 	}

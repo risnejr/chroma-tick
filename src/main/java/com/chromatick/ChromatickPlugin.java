@@ -352,6 +352,23 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		configManager.setConfiguration("chromatick", "hudCycleInPlace", on);
 	}
 
+	// ─── Per-tick prayer recorder ───────────────────────────────────────
+
+	void setRecordMode(RecordMode mode)
+	{
+		configManager.setConfiguration("chromatick", "recordMode", mode);
+	}
+
+	void setRecordIconPosition(IconPosition pos)
+	{
+		configManager.setConfiguration("chromatick", "recordIconPosition", pos);
+	}
+
+	void setRecordArmTicks(int ticks)
+	{
+		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, Math.min(10, ticks)));
+	}
+
 	private void applyDisplayMode()
 	{
 		DisplayMode mode = config.displayMode();
