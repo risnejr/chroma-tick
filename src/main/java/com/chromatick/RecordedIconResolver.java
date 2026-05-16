@@ -6,6 +6,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Prayer;
 import net.runelite.api.gameval.SpriteID;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 
 /**
@@ -33,7 +34,13 @@ class RecordedIconResolver
 	private static final Color RED_CLICK_COLOR    = new Color(0xE8, 0x35, 0x35);
 	private static final Color YELLOW_CLICK_COLOR = new Color(0xF5, 0xC5, 0x2A);
 
+	// Fallback color for ITEM_USE when the source-item lookup fails (no
+	// selected widget, no item ID, etc.). A muted cyan — distinct from
+	// red/yellow without clashing.
+	private static final Color ITEM_USE_FALLBACK = new Color(0x40, 0xC8, 0xA0);
+
 	private final SpriteManager spriteManager;
+	private final ItemManager itemManager;
 
 	private volatile BufferedImage spriteMelee;
 	private volatile BufferedImage spriteMissiles;
@@ -41,9 +48,10 @@ class RecordedIconResolver
 	private boolean requested = false;
 
 	@Inject
-	RecordedIconResolver(SpriteManager spriteManager)
+	RecordedIconResolver(SpriteManager spriteManager, ItemManager itemManager)
 	{
 		this.spriteManager = spriteManager;
+		this.itemManager = itemManager;
 	}
 
 	/**
@@ -92,8 +100,10 @@ class RecordedIconResolver
 		switch (event.category())
 		{
 			case PROTECTION_PRAYER:
-				BufferedImage sprite = prayerSprite(event.primaryId());
-				return sprite == null ? null : RecordedIcon.sprite(sprite);
+				BufferedImage prayerSprite = prayerSprite(event.primaryId());
+				return prayerSprite == null ? null : RecordedIcon.sprite(prayerSprite);
+			case ITEM_USE:
+				return itemUseIcon(event);
 			case RED_CLICK:
 				return RecordedIcon.dot(RED_CLICK_COLOR);
 			case YELLOW_CLICK:
@@ -101,6 +111,24 @@ class RecordedIconResolver
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * Render the source-item sprite for an ITEM_USE event. ItemManager
+	 * returns an AsyncBufferedImage that paints itself once loaded, so
+	 * the first few frames may show empty until the load completes. If
+	 * we don't have a source item ID (no widget was selected at click
+	 * time, e.g. spell-cast click) fall back to a muted dot so the user
+	 * still sees "an item-use happened here".
+	 */
+	private RecordedIcon itemUseIcon(TickActionEvent event)
+	{
+		int sourceId = event.primaryId();
+		if (sourceId <= 0)
+		{
+			return RecordedIcon.dot(ITEM_USE_FALLBACK);
+		}
+		return RecordedIcon.sprite(itemManager.getImage(sourceId));
 	}
 
 	/** {@code primaryId} = {@link Prayer#ordinal()}. Defensive bounds check. */

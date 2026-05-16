@@ -1,7 +1,11 @@
 package com.chromatick;
 
+import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.Client;
+import net.runelite.api.MenuAction;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.eventbus.Subscribe;
 
 /**
@@ -10,10 +14,11 @@ import net.runelite.client.eventbus.Subscribe;
  * the buffered events in {@code onGameTick}; the recorder filters by the
  * user's enabled categories from there.
  *
- * <p>Currently captures one click per tick interval (yellow vs red),
- * latest wins. Item-use classification + per-tick prayer/movement
- * already happen on the plugin side, so this class deliberately only
- * holds the click slot — the next commit widens it to detect ITEM_USE.
+ * <p>Captures one click per tick interval (item-use, yellow or red);
+ * latest wins. Item-use detection looks at {@link MenuAction}'s family
+ * of {@code WIDGET_TARGET_ON_*} values and pulls the source item ID
+ * from {@link Client#getSelectedWidget()} — that's the item the player
+ * had selected before clicking the target.
  *
  * <p>Threading: RuneLite delivers events on the client thread; the
  * plugin reads on the same thread in {@code onGameTick}. Single-threaded
@@ -22,7 +27,15 @@ import net.runelite.client.eventbus.Subscribe;
 @Singleton
 class TickActionCapture
 {
+	private final Client client;
+
 	private TickActionEvent pendingClick;
+
+	@Inject
+	TickActionCapture(Client client)
+	{
+		this.client = client;
+	}
 
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
@@ -49,21 +62,72 @@ class TickActionCapture
 	}
 
 	/**
-	 * Classify a single menu click as red vs yellow. The user's mental
-	 * model is "what cursor color did I see" — the simplest heuristic that
-	 * matches: the menu option text was "Attack". Everything else is
-	 * yellow, including Walk-here / Talk / Examine / generic interactions.
+	 * Classify a menu click into one of ITEM_USE / RED_CLICK / YELLOW_CLICK.
+	 * Mutually exclusive — a click can only be one of the three at a time.
 	 *
-	 * <p>{@code primaryId} stays NONE for both — the renderer paints a
-	 * colored dot, not a sprite, so no item/sprite ID is needed.
+	 * <ul>
+	 *   <li>ITEM_USE — any {@link MenuAction#WIDGET_TARGET_ON_GAME_OBJECT}
+	 *       / NPC / PLAYER / GROUND_ITEM / WIDGET. Source item ID comes
+	 *       from {@link Client#getSelectedWidget()} (the item the player
+	 *       picked up the cursor with).
+	 *   <li>RED_CLICK — menu option was "Attack" (case-insensitive). User
+	 *       mental model is "I saw a red cursor"; that's the simplest
+	 *       proxy.
+	 *   <li>YELLOW_CLICK — everything else (walk-here, talk, examine,
+	 *       generic interact, etc.).
+	 * </ul>
 	 */
-	private static TickActionEvent classify(MenuOptionClicked event)
+	private TickActionEvent classify(MenuOptionClicked event)
 	{
+		if (isItemUseAction(event.getMenuAction()))
+		{
+			int sourceItemId = selectedItemId();
+			return TickActionEvent.of(TickActionCategory.ITEM_USE, sourceItemId);
+		}
 		String option = event.getMenuOption();
 		if (option != null && option.equalsIgnoreCase("Attack"))
 		{
 			return TickActionEvent.of(TickActionCategory.RED_CLICK, TickActionEvent.NONE);
 		}
 		return TickActionEvent.of(TickActionCategory.YELLOW_CLICK, TickActionEvent.NONE);
+	}
+
+	private static boolean isItemUseAction(MenuAction action)
+	{
+		if (action == null)
+		{
+			return false;
+		}
+		switch (action)
+		{
+			case WIDGET_TARGET_ON_GAME_OBJECT:
+			case WIDGET_TARGET_ON_NPC:
+			case WIDGET_TARGET_ON_PLAYER:
+			case WIDGET_TARGET_ON_GROUND_ITEM:
+			case WIDGET_TARGET_ON_WIDGET:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Item ID of the currently-selected widget (the item the player had
+	 * "in hand" before clicking the target). Returns {@link TickActionEvent#NONE}
+	 * if no widget is selected or it isn't an inventory item.
+	 */
+	private int selectedItemId()
+	{
+		if (!client.isWidgetSelected())
+		{
+			return TickActionEvent.NONE;
+		}
+		Widget selected = client.getSelectedWidget();
+		if (selected == null)
+		{
+			return TickActionEvent.NONE;
+		}
+		int itemId = selected.getItemId();
+		return itemId > 0 ? itemId : TickActionEvent.NONE;
 	}
 }
