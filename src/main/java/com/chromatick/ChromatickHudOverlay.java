@@ -111,15 +111,11 @@ public class ChromatickHudOverlay extends Overlay
 		// tick and flips the persisted anchor target to NONE.
 		HudAnchorTarget anchorTarget = config.hudAnchorTarget();
 		boolean anchored = anchorTarget != HudAnchorTarget.NONE && !userDragged;
-		if (anchored && !canvasResized && lastSetLocation != null)
+		if (anchored && wasDragged(canvasResized, lastSetLocation, getPreferredLocation()))
 		{
-			Point current = getPreferredLocation();
-			if (current != null && !current.equals(lastSetLocation))
-			{
-				userDragged = true;
-				lastSetLocation = null;
-				anchored = false;
-			}
+			userDragged = true;
+			lastSetLocation = null;
+			anchored = false;
 		}
 
 		final int currentTick = Math.floorMod(plugin.getTickIndex(), cycleLength);
@@ -239,6 +235,22 @@ public class ChromatickHudOverlay extends Overlay
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * True when the framework's preferred location no longer matches what we
+	 * last set, meaning the user alt-dragged the overlay. Pure predicate —
+	 * extracted from render() so the edge cases (window resize, null seed
+	 * location, missing preferred location) can be pinned down with unit
+	 * tests without standing up a render context.
+	 */
+	static boolean wasDragged(boolean canvasResized, Point lastSet, Point current)
+	{
+		if (canvasResized || lastSet == null || current == null)
+		{
+			return false;
+		}
+		return !current.equals(lastSet);
 	}
 
 	/** Player's feet at ground level in canvas pixel space, or null if unavailable. */
