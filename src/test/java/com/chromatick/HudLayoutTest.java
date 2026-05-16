@@ -2,6 +2,7 @@ package com.chromatick;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -228,5 +229,89 @@ public class HudLayoutTest
 		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false);
 		assertTrue(l.glyphSize(true) >= l.baseGlyph);
 		assertTrue(l.glyphSize(false) >= l.baseGlyph);
+	}
+
+	// ─── Icon band ───────────────────────────────────────────────────────
+
+	@Test
+	public void noIconBandWhenWantIconsFalse()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false);
+		assertFalse(l.showIcons);
+		assertEquals(0, l.iconBandPx);
+		assertEquals(-1, l.iconCenterY());
+		assertEquals(10 + 2 * MARGIN, l.totalHeight);
+	}
+
+	@Test
+	public void iconBandAddsCellSizeToHeightWhenAbove()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.ABOVE);
+		assertTrue(l.showIcons);
+		assertEquals(10, l.iconBandPx);
+		// Glyph row(10) + icon band(10) + margins(4) = 24.
+		assertEquals(24, l.totalHeight);
+		// Glyph row shifts down to make room for the icon band.
+		assertEquals(MARGIN + 10 + 5, l.cellCenterY(0));
+		// Icons center within their band at the top.
+		assertEquals(MARGIN + 5, l.iconCenterY());
+	}
+
+	@Test
+	public void iconBandAddsCellSizeToHeightWhenBelow()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.BELOW);
+		assertTrue(l.showIcons);
+		assertEquals(10, l.iconBandPx);
+		assertEquals(24, l.totalHeight);
+		// Glyph row stays put.
+		assertEquals(MARGIN + 5, l.cellCenterY(0));
+		// Icons sit under the glyph row.
+		assertEquals(MARGIN + 10 + 5, l.iconCenterY());
+	}
+
+	@Test
+	public void iconBandIsSuppressedInVerticalMode()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, true, false, true, IconPosition.ABOVE);
+		assertFalse(l.showIcons);
+		assertEquals(0, l.iconBandPx);
+		assertEquals(-1, l.iconCenterY());
+	}
+
+	@Test
+	public void iconBandIsSuppressedInCycleInPlaceMode()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, true, true, IconPosition.ABOVE);
+		assertFalse(l.showIcons);
+		assertEquals(0, l.iconBandPx);
+	}
+
+	@Test
+	public void iconBandScalesWithGlyphScale()
+	{
+		HudLayout l = HudLayout.compute(200, 0, 0, 4, false, false, true, IconPosition.ABOVE);
+		// cellSize = 20 → iconBandPx = 20, totalH = 20 + 20 + 2*MARGIN = 44.
+		assertEquals(20, l.iconBandPx);
+		assertEquals(20 + 20 + 2 * MARGIN, l.totalHeight);
+	}
+
+	@Test
+	public void iconCenterXAlignsWithCellCenterX()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.ABOVE);
+		// Icons render at the same X as their tick column.
+		for (int k = 0; k < l.slots; k++)
+		{
+			assertEquals("icon column should align with glyph k=" + k,
+				l.cellCenterX(k), l.cellCenterX(k));
+		}
+	}
+
+	@Test
+	public void iconSizeIsBandHeightMinusInset()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.ABOVE);
+		assertEquals(Math.max(6, l.iconBandPx - 2), l.iconSize());
 	}
 }
