@@ -41,7 +41,7 @@ public class ChromatickHudOverlay extends Overlay
 	private final ChromatickConfig config;
 	private final Client client;
 	private final PaletteService palettes;
-	private final PrayerRecorderService recorder;
+	private final TickRecorderService recorder;
 	private final SpriteManager spriteManager;
 
 	/** The location we last set on the overlay ourselves; used to detect user drag. */
@@ -70,7 +70,7 @@ public class ChromatickHudOverlay extends Overlay
 
 	@Inject
 	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client,
-		PaletteService palettes, PrayerRecorderService recorder, SpriteManager spriteManager)
+		PaletteService palettes, TickRecorderService recorder, SpriteManager spriteManager)
 	{
 		super(plugin);
 		this.plugin = plugin;

@@ -52,7 +52,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private PaletteService palettes;
 
 	@Inject
-	private PrayerRecorderService recorder;
+	private TickRecorderService recorder;
 
 	@Inject
 	private ChromatickRuntimeState state;

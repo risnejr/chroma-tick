@@ -14,19 +14,19 @@ import static org.junit.Assert.assertTrue;
  * Tests for the per-tick recorder state machine. All inputs are plain ints
  * and Prayer sets — no RuneLite injection required.
  */
-public class PrayerRecorderServiceTest
+public class TickRecorderServiceTest
 {
 	private static final Set<Prayer> MELEE   = Collections.singleton(Prayer.PROTECT_FROM_MELEE);
 	private static final Set<Prayer> MAGIC   = Collections.singleton(Prayer.PROTECT_FROM_MAGIC);
 	private static final Set<Prayer> MISSILE = Collections.singleton(Prayer.PROTECT_FROM_MISSILES);
 	private static final Set<Prayer> NONE    = Collections.emptySet();
 
-	private PrayerRecorderService recorder;
+	private TickRecorderService recorder;
 
 	@Before
 	public void setUp()
 	{
-		recorder = new PrayerRecorderService();
+		recorder = new TickRecorderService();
 	}
 
 	// ─── Initial state ──────────────────────────────────────────────────

@@ -9,9 +9,15 @@ import javax.inject.Singleton;
 import net.runelite.api.Prayer;
 
 /**
- * Per-tick prayer log for the HUD timeline. State container only — the
- * plugin feeds it active prayers and movement signals each game tick;
- * the HUD overlay reads back per-tick {@link Prayer} sets when rendering.
+ * Per-tick recording log for the HUD timeline. State container only — the
+ * plugin feeds it the per-tick payload + movement signal each game tick;
+ * the HUD overlay reads back what was recorded at each tick-in-cycle when
+ * rendering.
+ *
+ * <p>Currently the payload is the active protect-prayer set; the recorder
+ * is structured so the captured-type can be widened to a generic action
+ * event later without changing this service's lifecycle, mode semantics,
+ * or buffer model.
  *
  * <p>Mode semantics:
  * <ul>
@@ -39,7 +45,7 @@ import net.runelite.api.Prayer;
  * and will be overwritten as new ticks come around.
  */
 @Singleton
-class PrayerRecorderService
+class TickRecorderService
 {
 	private final Map<Integer, EnumSet<Prayer>> store = new HashMap<>();
 
