@@ -455,6 +455,7 @@ class ChromatickPanel extends PluginPanel
 			plugin.setHudVertical(vert);
 			hudOrientTextLabel.setText(orientText(vert));
 			hudOrientGlyph.setVertical(vert);
+			applyIconPositionLabels(vert);
 		});
 		hudBody.add(labeledCheckBoxRow(inlineLabelArea(hudOrientTextLabel, hudOrientGlyph), hudOrientBox));
 
@@ -588,10 +589,9 @@ class ChromatickPanel extends PluginPanel
 			recordArmTicksValueLabel.setEnabled(mode == RecordMode.ARM);
 		});
 
-		// Icon position — Above / Below the glyph row.
-		recordIconPositionToggle.setPillTooltips(new String[]{
-			"Icons render above the row",
-			"Icons render below the row"});
+		// Icon position — labels follow orientation (Above/Below in horizontal,
+		// Left/Right in vertical) so they describe what the user actually sees.
+		applyIconPositionLabels(cfg.hudVertical());
 		recordIconPositionToggle.addListener(idx ->
 			plugin.setRecordIconPosition(IconPosition.values()[idx]));
 
@@ -636,6 +636,7 @@ class ChromatickPanel extends PluginPanel
 		hudOrientBox.setSelected(cfg.hudVertical());
 		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
 		hudOrientGlyph.setVertical(cfg.hudVertical());
+		applyIconPositionLabels(cfg.hudVertical());
 		hudAnchorToggle.setSelected(anchorTargetIdx(cfg.hudAnchorTarget()));
 		hudCycleInPlaceBox.setSelected(cfg.hudCycleInPlace());
 		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, cfg.hudScale());
@@ -716,6 +717,34 @@ class ChromatickPanel extends PluginPanel
 		}
 	}
 
+	/**
+	 * Sync the recorder's icon-position pill labels and tooltips to the HUD
+	 * orientation: Above/Below for the horizontal row, Left/Right for the
+	 * vertical column. The underlying {@link IconPosition} enum is unchanged
+	 * — only the display labels swap.
+	 */
+	private void applyIconPositionLabels(boolean vertical)
+	{
+		if (recordIconPositionToggle == null)
+		{
+			return;
+		}
+		if (vertical)
+		{
+			recordIconPositionToggle.setPillLabels(new String[]{"Left", "Right"});
+			recordIconPositionToggle.setPillTooltips(new String[]{
+				"Icons render in the left column",
+				"Icons render in the right column"});
+		}
+		else
+		{
+			recordIconPositionToggle.setPillLabels(new String[]{"Above", "Below"});
+			recordIconPositionToggle.setPillTooltips(new String[]{
+				"Icons render above the row",
+				"Icons render below the row"});
+		}
+	}
+
 	private static void setPctSliderControls(JSlider s, JLabel l, int v)
 	{
 		s.setValue(v);
@@ -789,6 +818,7 @@ class ChromatickPanel extends PluginPanel
 		hudOrientBox.setSelected(cfg.hudVertical());
 		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
 		hudOrientGlyph.setVertical(cfg.hudVertical());
+		applyIconPositionLabels(cfg.hudVertical());
 		hudAnchorToggle.setSelected(anchorTargetIdx(cfg.hudAnchorTarget()));
 		hudCycleInPlaceBox.setSelected(cfg.hudCycleInPlace());
 		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, cfg.hudScale());
@@ -1615,6 +1645,18 @@ class ChromatickPanel extends PluginPanel
 			{
 				pills.get(i).setToolTipText(tips[i]);
 			}
+		}
+
+		/** Update the visible pill labels in place — used when the same pill carries
+		 *  context-dependent text (e.g. Above/Below vs. Left/Right). */
+		void setPillLabels(String[] labels)
+		{
+			for (int i = 0; i < pills.size() && i < labels.length; i++)
+			{
+				pills.get(i).setText(labels[i]);
+			}
+			revalidate();
+			repaint();
 		}
 
 		@Override
