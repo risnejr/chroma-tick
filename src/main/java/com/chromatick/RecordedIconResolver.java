@@ -57,11 +57,13 @@ class RecordedIconResolver
 	}
 
 	/**
-	 * Resolve the sprite to render for a recorded tick. Only one
-	 * Protect-from-X prayer can be active at a time in OSRS, so we return
-	 * the first prayer in the captured set whose sprite has loaded.
-	 * Returns {@code null} when nothing was recorded or no matching sprite
-	 * has loaded yet.
+	 * Resolve the sprite to render for a recorded tick. Walks the event
+	 * list in declaration order and returns the first event whose category
+	 * yields a loaded sprite. Returns {@code null} when nothing was
+	 * recorded or no matching sprite has loaded yet.
+	 *
+	 * <p>Today only PROTECTION_PRAYER is handled — the other categories
+	 * land in their feature commits, each contributing a branch here.
 	 */
 	BufferedImage spriteFor(RecordedTick recorded)
 	{
@@ -69,9 +71,9 @@ class RecordedIconResolver
 		{
 			return null;
 		}
-		for (Prayer p : recorded.prayers())
+		for (TickActionEvent event : recorded.actions())
 		{
-			BufferedImage sprite = spriteFor(p);
+			BufferedImage sprite = spriteFor(event);
 			if (sprite != null)
 			{
 				return sprite;
@@ -80,9 +82,26 @@ class RecordedIconResolver
 		return null;
 	}
 
-	private BufferedImage spriteFor(Prayer p)
+	private BufferedImage spriteFor(TickActionEvent event)
 	{
-		switch (p)
+		switch (event.category())
+		{
+			case PROTECTION_PRAYER:
+				return prayerSprite(event.primaryId());
+			default:
+				return null;
+		}
+	}
+
+	/** {@code primaryId} = {@link Prayer#ordinal()}. Defensive bounds check. */
+	private BufferedImage prayerSprite(int prayerOrdinal)
+	{
+		Prayer[] prayers = Prayer.values();
+		if (prayerOrdinal < 0 || prayerOrdinal >= prayers.length)
+		{
+			return null;
+		}
+		switch (prayers[prayerOrdinal])
 		{
 			case PROTECT_FROM_MELEE:    return spriteMelee;
 			case PROTECT_FROM_MISSILES: return spriteMissiles;

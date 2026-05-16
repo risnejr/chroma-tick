@@ -3,7 +3,10 @@ package com.chromatick;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
@@ -145,7 +148,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		// persisting back to config. Persisting would mean a hotkey cycle
 		// shrink → expand round-trip permanently destroys the user's setting.
 		int armTicks = Math.min(config.recordArmTicks(), cycleLength);
-		recorder.onTick(nextTick, activeProtectPrayers(), moved, armTicks);
+		recorder.onTick(nextTick, buildTickEvents(), moved, armTicks);
 		RecordMode afterMode = recorder.getMode();
 		if (beforeMode != afterMode)
 		{
@@ -169,6 +172,27 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if (client.isPrayerActive(Prayer.PROTECT_FROM_MISSILES)) active.add(Prayer.PROTECT_FROM_MISSILES);
 		if (client.isPrayerActive(Prayer.PROTECT_FROM_MAGIC))    active.add(Prayer.PROTECT_FROM_MAGIC);
 		return active;
+	}
+
+	/**
+	 * Build the list of {@link TickActionEvent}s captured this game tick.
+	 * Currently only PROTECTION_PRAYER events are emitted; the upcoming
+	 * capture service will add click / item-use / movement events here
+	 * (or buffer them via {@code @Subscribe} and have this method drain).
+	 */
+	private List<TickActionEvent> buildTickEvents()
+	{
+		Set<Prayer> active = activeProtectPrayers();
+		if (active.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		List<TickActionEvent> events = new ArrayList<>(active.size());
+		for (Prayer p : active)
+		{
+			events.add(TickActionEvent.of(TickActionCategory.PROTECTION_PRAYER, p.ordinal()));
+		}
+		return events;
 	}
 
 	@Subscribe
