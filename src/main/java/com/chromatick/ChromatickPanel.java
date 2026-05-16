@@ -135,6 +135,17 @@ class ChromatickPanel extends PluginPanel
 	private int  selectedCycle;
 	private Slot editing;
 
+	/**
+	 * True while refreshFromConfig() (or the constructor's initial-state block)
+	 * is programmatically updating the recorder slider. JSlider.setMaximum
+	 * snaps the current value down if the new max is lower, which fires the
+	 * change listener and — without this guard — would persist the snapped
+	 * value back to config, destroying the user's intent on a hotkey cycle
+	 * shrink. Local to recordArmTicks because that's the only slider whose
+	 * max we change at runtime.
+	 */
+	private boolean suppressArmTicksListener = false;
+
 	ChromatickPanel(ChromatickPlugin plugin, PaletteService palettes)
 	{
 		this.plugin = plugin;
@@ -601,6 +612,10 @@ class ChromatickPanel extends PluginPanel
 		// Arm length — total ticks captured per ARM trigger. 1 = the movement
 		// tick alone; 2 = movement tick + 1 more; etc.
 		recordArmTicksSlider.addChangeListener(e -> {
+			if (suppressArmTicksListener)
+			{
+				return;
+			}
 			int v = recordArmTicksSlider.getValue();
 			recordArmTicksValueLabel.setText(valueFmt(v, "t"));
 			plugin.setRecordArmTicks(v);
@@ -657,11 +672,21 @@ class ChromatickPanel extends PluginPanel
 		recordIconPositionToggle.setSelected(s.recordIconPosition.ordinal());
 		recordModeDot.setMode(s.recordMode);
 		// Cap the slider max at the current effective cycle length — recording
-		// past the cycle length just overdubs the same indices.
-		int armMax = s.effectiveCycleLength;
-		recordArmTicksSlider.setMaximum(armMax);
-		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
-			Math.min(s.recordArmTicks, armMax), "t");
+		// past the cycle length just overdubs the same indices. Suppress the
+		// change listener around setMaximum/setValue so the programmatic snap
+		// doesn't echo back into config and destroy the persisted intent.
+		suppressArmTicksListener = true;
+		try
+		{
+			int armMax = s.effectiveCycleLength;
+			recordArmTicksSlider.setMaximum(armMax);
+			setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
+				Math.min(s.recordArmTicks, armMax), "t");
+		}
+		finally
+		{
+			suppressArmTicksListener = false;
+		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
 
@@ -839,11 +864,21 @@ class ChromatickPanel extends PluginPanel
 		recordIconPositionToggle.setSelected(s.recordIconPosition.ordinal());
 		recordModeDot.setMode(s.recordMode);
 		// Cap the slider max at the current effective cycle length — recording
-		// past the cycle length just overdubs the same indices.
-		int armMax = s.effectiveCycleLength;
-		recordArmTicksSlider.setMaximum(armMax);
-		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
-			Math.min(s.recordArmTicks, armMax), "t");
+		// past the cycle length just overdubs the same indices. Suppress the
+		// change listener around setMaximum/setValue so the programmatic snap
+		// doesn't echo back into config and destroy the persisted intent.
+		suppressArmTicksListener = true;
+		try
+		{
+			int armMax = s.effectiveCycleLength;
+			recordArmTicksSlider.setMaximum(armMax);
+			setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
+				Math.min(s.recordArmTicks, armMax), "t");
+		}
+		finally
+		{
+			suppressArmTicksListener = false;
+		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
 	}

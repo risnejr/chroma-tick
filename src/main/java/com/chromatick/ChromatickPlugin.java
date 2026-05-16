@@ -141,7 +141,11 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			state.setLastWorldPoint(pos);
 		}
 		RecordMode beforeMode = recorder.getMode();
-		recorder.onTick(nextTick, activeProtectPrayers(), moved, config.recordArmTicks());
+		// Clamp the ARM window at the effective cycle length here, not by
+		// persisting back to config. Persisting would mean a hotkey cycle
+		// shrink → expand round-trip permanently destroys the user's setting.
+		int armTicks = Math.min(config.recordArmTicks(), cycleLength);
+		recorder.onTick(nextTick, activeProtectPrayers(), moved, armTicks);
 		RecordMode afterMode = recorder.getMode();
 		if (beforeMode != afterMode)
 		{
@@ -178,7 +182,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if ("cycleLength".equals(key))
 		{
 			state.clearCycleLengthOverride();
-			clampRecordArmTicksToCycle();
 		}
 		int cycleLength = getEffectiveCycleLength();
 		int idx = state.getTickIndex() % cycleLength;
@@ -243,7 +246,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			if (getCycleHotkeyByLength(n).matches(e))
 			{
 				state.setCycleLengthOverride(n);
-				clampRecordArmTicksToCycle();
 				if (panel != null)
 				{
 					SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -257,7 +259,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			state.clearCycleLengthOverride();
 			state.setTickIndex(0);
 			state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
-			clampRecordArmTicksToCycle();
 			if (panel != null)
 			{
 				SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -432,22 +433,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	void setRecordArmTicks(int ticks)
 	{
-		int max = getEffectiveCycleLength();
-		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, Math.min(max, ticks)));
-	}
-
-	/**
-	 * If the current arm-ticks setting exceeds the effective cycle length
-	 * (e.g. user shrank the cycle from 10 to 4 with arm-ticks at 8), persist
-	 * a clamped value so the recorder and panel can't drift out of sync.
-	 */
-	private void clampRecordArmTicksToCycle()
-	{
-		int max = getEffectiveCycleLength();
-		if (config.recordArmTicks() > max)
-		{
-			configManager.setConfiguration("chromatick", "recordArmTicks", max);
-		}
+		// Floor at 1; do not clamp against the effective cycle length here —
+		// onGameTick clamps at the recorder feed site, so the persisted value
+		// can stay at the user's intent (e.g. 8) even while a hotkey shrinks
+		// the effective cycle (e.g. 4). When the cycle expands again the
+		// persisted value comes back without rewriting config.
+		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, ticks));
 	}
 
 	private void applyDisplayMode()
