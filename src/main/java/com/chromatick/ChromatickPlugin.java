@@ -438,6 +438,11 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if (hud)
 		{
 			overlayManager.add(hudOverlay);
+			// On re-add, the overlay's stale lastSetLocation can mismatch the
+			// framework's persisted preferred location, false-positiving the
+			// next render's drag-detection check and flipping anchor to NONE.
+			// Resetting the drag state lets the overlay re-anchor cleanly.
+			hudOverlay.clearDragState();
 		}
 		else
 		{
