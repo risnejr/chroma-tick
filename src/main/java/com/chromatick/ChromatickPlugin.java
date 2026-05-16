@@ -58,6 +58,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private ChromatickRuntimeState state;
 
 	@Inject
+	private ChromatickConfigMigrator configMigrator;
+
+	@Inject
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
@@ -84,7 +87,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	@Override
 	protected void startUp() throws Exception
 	{
-		migrateLegacyEnumValues();
+		configMigrator.migrate();
 		applyDisplayMode();
 		keyManager.registerKeyListener(this);
 		state.reset();
@@ -493,48 +496,5 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	{
 		Color[] palette = palettes.getCustomPaletteForCycle(getEffectiveCycleLength());
 		return palette[index % palette.length];
-	}
-
-	/**
-	 * Rewrite legacy lowercase string values for the four enum-typed config
-	 * keys (displayMode/hudGlyph/hudAnchorTarget/paletteMode) to their
-	 * uppercase enum names. Pre-1.0 the plugin stored these as raw lowercase
-	 * strings; once the getters return enums those raw values fail to
-	 * deserialize and silently snap to the default. Runs once per startUp;
-	 * already-migrated values are no-ops.
-	 */
-	private void migrateLegacyEnumValues()
-	{
-		migrateEnumKey("displayMode", DisplayMode.class);
-		migrateEnumKey("hudGlyph", HudGlyph.class);
-		migrateEnumKey("hudAnchorTarget", HudAnchorTarget.class);
-		migrateEnumKey("paletteMode", PaletteMode.class);
-	}
-
-	private <T extends Enum<T>> void migrateEnumKey(String key, Class<T> enumType)
-	{
-		String raw = configManager.getConfiguration("chromatick", key);
-		if (raw == null || raw.isEmpty())
-		{
-			return;
-		}
-		try
-		{
-			Enum.valueOf(enumType, raw);
-			return; // already in canonical form
-		}
-		catch (IllegalArgumentException ignored)
-		{
-			// fall through to migration attempt
-		}
-		try
-		{
-			T migrated = Enum.valueOf(enumType, raw.toUpperCase(java.util.Locale.ROOT));
-			configManager.setConfiguration("chromatick", key, migrated.name());
-		}
-		catch (IllegalArgumentException ignored)
-		{
-			// Unknown legacy value — leave it so RuneLite falls back to default.
-		}
 	}
 }
