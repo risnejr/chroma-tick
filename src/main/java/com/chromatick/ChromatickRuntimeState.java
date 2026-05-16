@@ -19,14 +19,19 @@ import net.runelite.api.coords.WorldPoint;
  *   <li>{@code lastWorldPoint} — last observed player tile, used to detect
  *       movement for the prayer recorder.
  * </ul>
+ *
+ * <p>All fields are {@code volatile}: tick/color/lastWorldPoint are written
+ * from the client thread (game-tick + config-changed handlers) while
+ * cycleLengthOverride is written from the Swing EDT (key-listener callbacks).
+ * Without volatile the JVM could cache stale values per thread.
  */
 @Singleton
 class ChromatickRuntimeState
 {
-	private int tickIndex = 0;
-	private Color currentColor = Color.WHITE;
-	private int cycleLengthOverride = -1;
-	private WorldPoint lastWorldPoint = null;
+	private volatile int tickIndex = 0;
+	private volatile Color currentColor = Color.WHITE;
+	private volatile int cycleLengthOverride = -1;
+	private volatile WorldPoint lastWorldPoint = null;
 
 	int getTickIndex()
 	{
