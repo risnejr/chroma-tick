@@ -478,11 +478,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		}
 	}
 
-	ChromatickConfig getConfig()
-	{
-		return config;
-	}
-
 	/**
 	 * Immutable view-state for the sidebar panel. Captures all settings + the
 	 * runtime-resolved effective cycle length in a single read, so the panel

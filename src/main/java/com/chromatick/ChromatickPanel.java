@@ -140,6 +140,11 @@ class ChromatickPanel extends PluginPanel
 		this.plugin = plugin;
 		this.palettes = palettes;
 
+		// One read of plugin state, used throughout widget construction and the
+		// "Initial state" block below. Subsequent updates flow through
+		// refreshFromConfig(), which takes its own snapshot.
+		ChromatickPanelSnapshot s = plugin.snapshot();
+
 		setLayout(new BorderLayout());
 		setBorder(new EmptyBorder(8, 8, 8, 8));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -221,8 +226,8 @@ class ChromatickPanel extends PluginPanel
 		staticRow.setBackground(getBackground());
 		staticRow.setAlignmentX(CENTER_ALIGNMENT);
 		staticRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
-		staticBorderSwatch = new StaticSwatch("Border", true);
-		staticFillSwatch   = new StaticSwatch("Fill", false);
+		staticBorderSwatch = new StaticSwatch("Border", true, s.staticColor);
+		staticFillSwatch   = new StaticSwatch("Fill", false, s.staticFillColor);
 		staticRow.add(staticBorderSwatch);
 		staticRow.add(staticFillSwatch);
 		staticSection.add(staticRow);
@@ -301,8 +306,6 @@ class ChromatickPanel extends PluginPanel
 		content.add(displayToggle);
 		content.add(Box.createVerticalStrut(10));
 
-		ChromatickConfig cfg = plugin.getConfig();
-
 		// ─── Tile section ─────────────────────────────────────────────────
 		tileSection = column();
 		JPanel tileHeader = new JPanel(new BorderLayout());
@@ -332,7 +335,7 @@ class ChromatickPanel extends PluginPanel
 		// Fill enable — label "Fill tile" + outline/filled tile icon on left, checkbox right.
 		// (Listener wired below, after fillOpacitySlider exists.)
 		fillEnableBox = themedCheckBox();
-		fillTileGlyph = new FillTileGlyph(cfg.enableFillColor());
+		fillTileGlyph = new FillTileGlyph(s.enableFillColor);
 		fillEnableTextLabel = themedRowLabel("Fill tile");
 		tileBody.add(labeledCheckBoxRow(inlineLabelArea(fillEnableTextLabel, fillTileGlyph), fillEnableBox));
 
@@ -361,8 +364,8 @@ class ChromatickPanel extends PluginPanel
 		// Draw tile row — dynamic text "Draw tile under/above player" + tile glyph on left.
 		drawBelowBox = themedCheckBox();
 		drawBelowBox.setToolTipText("Requires GPU rendering mode in RuneLite settings");
-		drawBelowTextLabel = themedRowLabel(drawBelowText(cfg.drawBelowPlayer()));
-		tileGlyph = new PlayerTileGlyph(cfg.drawBelowPlayer());
+		drawBelowTextLabel = themedRowLabel(drawBelowText(s.drawBelowPlayer));
+		tileGlyph = new PlayerTileGlyph(s.drawBelowPlayer);
 		drawBelowBox.addActionListener(e -> {
 			boolean below = drawBelowBox.isSelected();
 			plugin.setDrawBelowPlayer(below);
@@ -448,8 +451,8 @@ class ChromatickPanel extends PluginPanel
 		// Orient — dynamic-text checkbox + 3-dot glyph. Checked = vertical.
 		hudOrientBox = themedCheckBox();
 		hudOrientBox.setToolTipText("Layout direction of the HUD bar");
-		hudOrientTextLabel = themedRowLabel(orientText(cfg.hudVertical()));
-		hudOrientGlyph = new HudOrientGlyph(cfg.hudVertical());
+		hudOrientTextLabel = themedRowLabel(orientText(s.hudVertical));
+		hudOrientGlyph = new HudOrientGlyph(s.hudVertical);
 		hudOrientBox.addActionListener(e -> {
 			boolean vert = hudOrientBox.isSelected();
 			plugin.setHudVertical(vert);
@@ -479,7 +482,7 @@ class ChromatickPanel extends PluginPanel
 		hudScaleSlider.addChangeListener(e -> {
 			int v = hudScaleSlider.getValue();
 			hudScaleValueLabel.setText(valueFmt(v, "%"));
-			if (v != plugin.getConfig().hudScale())
+			if (v != plugin.snapshot().hudScale)
 			{
 				plugin.setHudScale(v);
 			}
@@ -591,7 +594,7 @@ class ChromatickPanel extends PluginPanel
 
 		// Icon position — labels follow orientation (Above/Below in horizontal,
 		// Left/Right in vertical) so they describe what the user actually sees.
-		applyIconPositionLabels(cfg.hudVertical());
+		applyIconPositionLabels(s.hudVertical);
 		recordIconPositionToggle.addListener(idx ->
 			plugin.setRecordIconPosition(IconPosition.values()[idx]));
 
@@ -618,54 +621,54 @@ class ChromatickPanel extends PluginPanel
 		add(content, BorderLayout.NORTH);
 
 		// ─── Initial state ────────────────────────────────────────────────
-		modeToggle.setSelected(cfg.staticMode() ? 1 : 0);
-		pickerToggle.setSelected(cfg.paletteMode() == PaletteMode.WHEEL ? 1 : 0);
-		((CardLayout) pickerCard.getLayout()).show(pickerCard, cfg.paletteMode().name());
-		sequentialFill.setSelected(cfg.sequentialFill());
-		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
-		fillEnableBox.setSelected(cfg.enableFillColor());
-		fillTileGlyph.setFilled(cfg.enableFillColor());
-		setOpacityControls(cfg.fillOpacity());
-		fillOpacitySlider.setEnabled(cfg.enableFillColor());
-		fillOpacityValueLabel.setEnabled(cfg.enableFillColor());
-		drawBelowBox.setSelected(cfg.drawBelowPlayer());
-		drawBelowTextLabel.setText(drawBelowText(cfg.drawBelowPlayer()));
+		modeToggle.setSelected(s.staticMode ? 1 : 0);
+		pickerToggle.setSelected(s.paletteMode == PaletteMode.WHEEL ? 1 : 0);
+		((CardLayout) pickerCard.getLayout()).show(pickerCard, s.paletteMode.name());
+		sequentialFill.setSelected(s.sequentialFill);
+		setBorderWidthControls((int) Math.round(s.tileBorderWidth));
+		fillEnableBox.setSelected(s.enableFillColor);
+		fillTileGlyph.setFilled(s.enableFillColor);
+		setOpacityControls(s.fillOpacity);
+		fillOpacitySlider.setEnabled(s.enableFillColor);
+		fillOpacityValueLabel.setEnabled(s.enableFillColor);
+		drawBelowBox.setSelected(s.drawBelowPlayer);
+		drawBelowTextLabel.setText(drawBelowText(s.drawBelowPlayer));
 
-		displayToggle.setSelected(displayModeIdx(cfg.displayMode()));
-		hudStyleToggle.setSelected(cfg.hudGlyph() == HudGlyph.NUMBERS ? 1 : 0);
-		hudOrientBox.setSelected(cfg.hudVertical());
-		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
-		hudOrientGlyph.setVertical(cfg.hudVertical());
-		applyIconPositionLabels(cfg.hudVertical());
-		hudAnchorToggle.setSelected(anchorTargetIdx(cfg.hudAnchorTarget()));
-		hudCycleInPlaceBox.setSelected(cfg.hudCycleInPlace());
-		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, cfg.hudScale());
-		setPctSliderControls(hudActiveOpacitySlider, hudActiveOpacityValueLabel, cfg.hudActiveOpacity());
-		setPctSliderControls(hudInactiveOpacitySlider, hudInactiveOpacityValueLabel, cfg.hudInactiveOpacity());
-		setPctSliderControls(hudPopSlider, hudPopValueLabel, cfg.hudPop());
-		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, cfg.hudSpacing(), "px");
-		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, cfg.hudHorizontalOffset(), "px");
-		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, cfg.hudVerticalOffset(), "px");
-		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
-		hudBoldBox.setSelected(cfg.hudBold());
-		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
+		displayToggle.setSelected(displayModeIdx(s.displayMode));
+		hudStyleToggle.setSelected(s.hudGlyph == HudGlyph.NUMBERS ? 1 : 0);
+		hudOrientBox.setSelected(s.hudVertical);
+		hudOrientTextLabel.setText(orientText(s.hudVertical));
+		hudOrientGlyph.setVertical(s.hudVertical);
+		applyIconPositionLabels(s.hudVertical);
+		hudAnchorToggle.setSelected(anchorTargetIdx(s.hudAnchorTarget));
+		hudCycleInPlaceBox.setSelected(s.hudCycleInPlace);
+		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, s.hudScale);
+		setPctSliderControls(hudActiveOpacitySlider, hudActiveOpacityValueLabel, s.hudActiveOpacity);
+		setPctSliderControls(hudInactiveOpacitySlider, hudInactiveOpacityValueLabel, s.hudInactiveOpacity);
+		setPctSliderControls(hudPopSlider, hudPopValueLabel, s.hudPop);
+		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, s.hudSpacing, "px");
+		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, s.hudHorizontalOffset, "px");
+		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, s.hudVerticalOffset, "px");
+		setOffsetSlidersEnabled(s.hudAnchorTarget != HudAnchorTarget.NONE);
+		hudBoldBox.setSelected(s.hudBold);
+		hudBoldBox.setEnabled(s.hudGlyph == HudGlyph.NUMBERS);
 
-		recordModeToggle.setSelected(cfg.recordMode().ordinal());
-		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
-		recordModeDot.setMode(cfg.recordMode());
+		recordModeToggle.setSelected(s.recordMode.ordinal());
+		recordIconPositionToggle.setSelected(s.recordIconPosition.ordinal());
+		recordModeDot.setMode(s.recordMode);
 		// Cap the slider max at the current effective cycle length — recording
 		// past the cycle length just overdubs the same indices.
-		int armMax = plugin.getEffectiveCycleLength();
+		int armMax = s.effectiveCycleLength;
 		recordArmTicksSlider.setMaximum(armMax);
 		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
-			Math.min(cfg.recordArmTicks(), armMax), "t");
-		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
-		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
+			Math.min(s.recordArmTicks, armMax), "t");
+		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
+		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
 
-		selectedCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
-		applyModeVisibility(cfg.staticMode());
-		applyDisplayVisibility(cfg.displayMode());
-		applyCycleLengthEnabled(cfg);
+		selectedCycle = PaletteService.clampCycle(s.effectiveCycleLength);
+		applyModeVisibility(s.staticMode);
+		applyDisplayVisibility(s.displayMode);
+		applyCycleLengthEnabled(s);
 		highlightActiveCycleTab();
 		rebuildTickSwatches();
 		selectInitialEditingSlot();
@@ -706,11 +709,11 @@ class ChromatickPanel extends PluginPanel
 	 * any non-static mode, OR static mode with the HUD visible. If we're in
 	 * static + tile-only the cycle is just a frozen color — gray the tabs out.
 	 */
-	private void applyCycleLengthEnabled(ChromatickConfig cfg)
+	private void applyCycleLengthEnabled(ChromatickPanelSnapshot s)
 	{
-		boolean hudVisible = cfg.displayMode() == DisplayMode.HUD
-			|| cfg.displayMode() == DisplayMode.BOTH;
-		boolean enabled = !cfg.staticMode() || hudVisible;
+		boolean hudVisible = s.displayMode == DisplayMode.HUD
+			|| s.displayMode == DisplayMode.BOTH;
+		boolean enabled = !s.staticMode || hudVisible;
 		for (CycleTabButton b : tabButtons)
 		{
 			b.setTabEnabled(enabled);
@@ -779,12 +782,12 @@ class ChromatickPanel extends PluginPanel
 
 	void refreshFromConfig()
 	{
-		ChromatickConfig cfg      = plugin.getConfig();
-		boolean          isStatic = cfg.staticMode();
+		ChromatickPanelSnapshot s = plugin.snapshot();
+		boolean isStatic = s.staticMode;
 		modeToggle.setSelected(isStatic ? 1 : 0);
 		applyModeVisibility(isStatic);
 
-		int activeCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
+		int activeCycle = PaletteService.clampCycle(s.effectiveCycleLength);
 		if (activeCycle != selectedCycle)
 		{
 			selectedCycle = activeCycle;
@@ -796,53 +799,53 @@ class ChromatickPanel extends PluginPanel
 		}
 		highlightActiveCycleTab();
 
-		staticBorderSwatch.setColor(cfg.staticColor());
-		staticFillSwatch.setColor(cfg.staticFillColor());
+		staticBorderSwatch.setColor(s.staticColor);
+		staticFillSwatch.setColor(s.staticFillColor);
 
-		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
-		fillEnableBox.setSelected(cfg.enableFillColor());
-		fillTileGlyph.setFilled(cfg.enableFillColor());
-		setOpacityControls(cfg.fillOpacity());
-		fillOpacitySlider.setEnabled(cfg.enableFillColor());
-		fillOpacityValueLabel.setEnabled(cfg.enableFillColor());
+		setBorderWidthControls((int) Math.round(s.tileBorderWidth));
+		fillEnableBox.setSelected(s.enableFillColor);
+		fillTileGlyph.setFilled(s.enableFillColor);
+		setOpacityControls(s.fillOpacity);
+		fillOpacitySlider.setEnabled(s.enableFillColor);
+		fillOpacityValueLabel.setEnabled(s.enableFillColor);
 
-		boolean below = cfg.drawBelowPlayer();
+		boolean below = s.drawBelowPlayer;
 		drawBelowBox.setSelected(below);
 		drawBelowTextLabel.setText(drawBelowText(below));
 		tileGlyph.setBelow(below);
 
-		displayToggle.setSelected(displayModeIdx(cfg.displayMode()));
-		applyDisplayVisibility(cfg.displayMode());
-		applyCycleLengthEnabled(cfg);
-		hudStyleToggle.setSelected(cfg.hudGlyph() == HudGlyph.NUMBERS ? 1 : 0);
-		hudOrientBox.setSelected(cfg.hudVertical());
-		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
-		hudOrientGlyph.setVertical(cfg.hudVertical());
-		applyIconPositionLabels(cfg.hudVertical());
-		hudAnchorToggle.setSelected(anchorTargetIdx(cfg.hudAnchorTarget()));
-		hudCycleInPlaceBox.setSelected(cfg.hudCycleInPlace());
-		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, cfg.hudScale());
-		setPctSliderControls(hudActiveOpacitySlider, hudActiveOpacityValueLabel, cfg.hudActiveOpacity());
-		setPctSliderControls(hudInactiveOpacitySlider, hudInactiveOpacityValueLabel, cfg.hudInactiveOpacity());
-		setPctSliderControls(hudPopSlider, hudPopValueLabel, cfg.hudPop());
-		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, cfg.hudSpacing(), "px");
-		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, cfg.hudHorizontalOffset(), "px");
-		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, cfg.hudVerticalOffset(), "px");
-		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
-		hudBoldBox.setSelected(cfg.hudBold());
-		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
+		displayToggle.setSelected(displayModeIdx(s.displayMode));
+		applyDisplayVisibility(s.displayMode);
+		applyCycleLengthEnabled(s);
+		hudStyleToggle.setSelected(s.hudGlyph == HudGlyph.NUMBERS ? 1 : 0);
+		hudOrientBox.setSelected(s.hudVertical);
+		hudOrientTextLabel.setText(orientText(s.hudVertical));
+		hudOrientGlyph.setVertical(s.hudVertical);
+		applyIconPositionLabels(s.hudVertical);
+		hudAnchorToggle.setSelected(anchorTargetIdx(s.hudAnchorTarget));
+		hudCycleInPlaceBox.setSelected(s.hudCycleInPlace);
+		setPctSliderControls(hudScaleSlider, hudScaleValueLabel, s.hudScale);
+		setPctSliderControls(hudActiveOpacitySlider, hudActiveOpacityValueLabel, s.hudActiveOpacity);
+		setPctSliderControls(hudInactiveOpacitySlider, hudInactiveOpacityValueLabel, s.hudInactiveOpacity);
+		setPctSliderControls(hudPopSlider, hudPopValueLabel, s.hudPop);
+		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, s.hudSpacing, "px");
+		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, s.hudHorizontalOffset, "px");
+		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, s.hudVerticalOffset, "px");
+		setOffsetSlidersEnabled(s.hudAnchorTarget != HudAnchorTarget.NONE);
+		hudBoldBox.setSelected(s.hudBold);
+		hudBoldBox.setEnabled(s.hudGlyph == HudGlyph.NUMBERS);
 
-		recordModeToggle.setSelected(cfg.recordMode().ordinal());
-		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
-		recordModeDot.setMode(cfg.recordMode());
+		recordModeToggle.setSelected(s.recordMode.ordinal());
+		recordIconPositionToggle.setSelected(s.recordIconPosition.ordinal());
+		recordModeDot.setMode(s.recordMode);
 		// Cap the slider max at the current effective cycle length — recording
 		// past the cycle length just overdubs the same indices.
-		int armMax = plugin.getEffectiveCycleLength();
+		int armMax = s.effectiveCycleLength;
 		recordArmTicksSlider.setMaximum(armMax);
 		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
-			Math.min(cfg.recordArmTicks(), armMax), "t");
-		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
-		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
+			Math.min(s.recordArmTicks, armMax), "t");
+		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
+		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
 	}
 
 	void onPaletteChanged(int cycleN)
@@ -1374,11 +1377,11 @@ class ChromatickPanel extends PluginPanel
 		private Color         color;
 		private boolean       selected;
 
-		StaticSwatch(String label, boolean border)
+		StaticSwatch(String label, boolean border, Color initial)
 		{
 			this.label  = label;
 			this.border = border;
-			this.color  = border ? plugin.getConfig().staticColor() : plugin.getConfig().staticFillColor();
+			this.color  = initial;
 			setPreferredSize(new Dimension(72, 48));
 			setOpaque(false);
 			setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
