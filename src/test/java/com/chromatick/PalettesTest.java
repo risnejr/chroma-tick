@@ -24,14 +24,14 @@ public class PalettesTest
 	public void paletteArrayCoversCyclesTwoThroughTen()
 	{
 		assertEquals("PALETTES is indexed by cycle length; needs slots 0..10",
-			MAX_CYCLE + 1, ChromatickPlugin.PALETTES.length);
+			MAX_CYCLE + 1, PaletteService.PALETTES.length);
 	}
 
 	@Test
 	public void cycleZeroAndOneAreUnused()
 	{
-		assertNull("cycle 0 slot is intentionally unused", ChromatickPlugin.PALETTES[0]);
-		assertNull("cycle 1 slot is intentionally unused", ChromatickPlugin.PALETTES[1]);
+		assertNull("cycle 0 slot is intentionally unused", PaletteService.PALETTES[0]);
+		assertNull("cycle 1 slot is intentionally unused", PaletteService.PALETTES[1]);
 	}
 
 	@Test
@@ -39,7 +39,7 @@ public class PalettesTest
 	{
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
-			Color[] palette = ChromatickPlugin.PALETTES[n];
+			Color[] palette = PaletteService.PALETTES[n];
 			assertNotNull("palette for cycle " + n + " must exist", palette);
 			assertEquals("palette[" + n + "] must have " + n + " colors",
 				n, palette.length);
@@ -51,7 +51,7 @@ public class PalettesTest
 	{
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
-			Color[] palette = ChromatickPlugin.PALETTES[n];
+			Color[] palette = PaletteService.PALETTES[n];
 			for (int i = 0; i < palette.length; i++)
 			{
 				assertNotNull("palette[" + n + "][" + i + "] is null", palette[i]);
@@ -68,7 +68,7 @@ public class PalettesTest
 		// silently double up.
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
-			Color[] palette = ChromatickPlugin.PALETTES[n];
+			Color[] palette = PaletteService.PALETTES[n];
 			for (int i = 0; i < palette.length; i++)
 			{
 				assertEquals("palette[" + n + "][" + i + "] must be fully opaque",
@@ -84,7 +84,7 @@ public class PalettesTest
 		// single cycle would defeat the plugin's UX goal.
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
-			Color[] palette = ChromatickPlugin.PALETTES[n];
+			Color[] palette = PaletteService.PALETTES[n];
 			Set<Integer> seen = new HashSet<>();
 			for (int i = 0; i < palette.length; i++)
 			{
@@ -105,7 +105,7 @@ public class PalettesTest
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
 		{
 			assertEquals("palette[" + n + "][0] should anchor at red",
-				expected, ChromatickPlugin.PALETTES[n][0]);
+				expected, PaletteService.PALETTES[n][0]);
 		}
 	}
 }

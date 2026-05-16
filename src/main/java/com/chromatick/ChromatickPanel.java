@@ -41,8 +41,8 @@ import net.runelite.client.ui.PluginPanel;
  */
 class ChromatickPanel extends PluginPanel
 {
-	private static final int MIN_CYCLE = 2;
-	private static final int MAX_CYCLE = 10;
+	private static final int MIN_CYCLE = PaletteService.MIN_CYCLE;
+	private static final int MAX_CYCLE = PaletteService.MAX_CYCLE;
 	private static final String CARD_GRID  = "grid";
 	private static final String CARD_WHEEL = "wheel";
 	// Pill-index → config string; must stay in sync with the Anchor pill order.
@@ -55,6 +55,7 @@ class ChromatickPanel extends PluginPanel
 	private static final Color DIVIDER   = new Color(0x3A3A3A);
 
 	private final ChromatickPlugin plugin;
+	private final PaletteService palettes;
 
 	// Mode toggle
 	private final PillToggle modeToggle;
@@ -125,9 +126,10 @@ class ChromatickPanel extends PluginPanel
 	private int  selectedCycle;
 	private Slot editing;
 
-	ChromatickPanel(ChromatickPlugin plugin)
+	ChromatickPanel(ChromatickPlugin plugin, PaletteService palettes)
 	{
 		this.plugin = plugin;
+		this.palettes = palettes;
 
 		setLayout(new BorderLayout());
 		setBorder(new EmptyBorder(8, 8, 8, 8));
@@ -188,7 +190,7 @@ class ChromatickPanel extends PluginPanel
 			@Override
 			public void mousePressed(MouseEvent e)
 			{
-				plugin.resetCustomPaletteForCycle(selectedCycle);
+				palettes.resetCustomPaletteForCycle(selectedCycle);
 				rebuildTickSwatches();
 				selectFirstTickSlot();
 			}
@@ -587,7 +589,7 @@ class ChromatickPanel extends PluginPanel
 		hudBoldBox.setSelected(cfg.hudBold());
 		hudBoldBox.setEnabled("numbers".equals(cfg.hudGlyph()));
 
-		selectedCycle = clampCycle(plugin.getEffectiveCycleLength());
+		selectedCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
 		applyModeVisibility(cfg.staticMode());
 		applyDisplayVisibility(cfg.displayMode());
 		applyCycleLengthEnabled(cfg);
@@ -681,7 +683,7 @@ class ChromatickPanel extends PluginPanel
 		modeToggle.setSelected(isStatic ? 1 : 0);
 		applyModeVisibility(isStatic);
 
-		int activeCycle = clampCycle(plugin.getEffectiveCycleLength());
+		int activeCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
 		if (activeCycle != selectedCycle)
 		{
 			selectedCycle = activeCycle;
@@ -733,7 +735,7 @@ class ChromatickPanel extends PluginPanel
 	{
 		if (cycleN == selectedCycle && !plugin.isStaticMode())
 		{
-			Color[] palette = plugin.getCustomPaletteForCycle(selectedCycle);
+			Color[] palette = palettes.getCustomPaletteForCycle(selectedCycle);
 			for (int i = 0; i < tickSwatches.size() && i < palette.length; i++)
 			{
 				tickSwatches.get(i).setColor(palette[i]);
@@ -798,7 +800,7 @@ class ChromatickPanel extends PluginPanel
 	{
 		swatchRow.removeAll();
 		tickSwatches.clear();
-		Color[] palette = plugin.getCustomPaletteForCycle(selectedCycle);
+		Color[] palette = palettes.getCustomPaletteForCycle(selectedCycle);
 		int perRow = Math.min(selectedCycle, 5);
 		int rows   = (int) Math.ceil(selectedCycle / (double) perRow);
 		swatchRow.setLayout(new GridLayout(rows, perRow, 4, 4));
@@ -869,11 +871,6 @@ class ChromatickPanel extends PluginPanel
 	private void updateHex(Color c)
 	{
 		hexDisplay.setColor(c);
-	}
-
-	private static int clampCycle(int n)
-	{
-		return Math.max(MIN_CYCLE, Math.min(MAX_CYCLE, n));
 	}
 
 	// ─── Layout helpers ───────────────────────────────────────────────────
@@ -1192,7 +1189,7 @@ class ChromatickPanel extends PluginPanel
 		public void applyColor(Color c)
 		{
 			color = c;
-			plugin.setCustomPaletteColor(selectedCycle, index, c);
+			palettes.setCustomPaletteColor(selectedCycle, index, c);
 			repaint();
 		}
 
