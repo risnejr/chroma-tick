@@ -1,6 +1,7 @@
 package com.chromatick;
 
 import java.awt.Color;
+import java.util.Set;
 import lombok.Builder;
 
 /**
@@ -54,16 +55,19 @@ final class ChromatickPanelSnapshot
 	final RecordMode recordMode;
 	final IconPosition recordIconPosition;
 	final int recordArmTicks;
+	final Set<TickActionCategory> recordCategories;
 
 	// ── Runtime-resolved (config + hotkey override) ─────────────────────
 	final int effectiveCycleLength;
 
 	/**
-	 * Build a snapshot from the current config + already-resolved effective
-	 * cycle length. Kept as a single factory so the field-to-getter mapping
-	 * lives in one place and is straightforward to unit-test.
+	 * Build a snapshot from the current config + already-resolved runtime
+	 * values (effective cycle length, parsed category set). Kept as a
+	 * single factory so the field-to-getter mapping lives in one place and
+	 * is straightforward to unit-test.
 	 */
-	static ChromatickPanelSnapshot from(ChromatickConfig cfg, int effectiveCycleLength)
+	static ChromatickPanelSnapshot from(ChromatickConfig cfg, int effectiveCycleLength,
+		Set<TickActionCategory> recordCategories)
 	{
 		return ChromatickPanelSnapshot.builder()
 			.staticMode(cfg.staticMode())
@@ -91,6 +95,7 @@ final class ChromatickPanelSnapshot
 			.recordMode(cfg.recordMode())
 			.recordIconPosition(cfg.recordIconPosition())
 			.recordArmTicks(cfg.recordArmTicks())
+			.recordCategories(recordCategories)
 			.effectiveCycleLength(effectiveCycleLength)
 			.build();
 	}

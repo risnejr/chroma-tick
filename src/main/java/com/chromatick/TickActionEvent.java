@@ -21,9 +21,6 @@ package com.chromatick;
  *   <li>{@link TickActionCategory#ITEM_USE} —
  *       {@code primaryId} = source item ID,
  *       {@code secondaryId} = target item ID (-1 for use-on-object/NPC).
- *   <li>{@link TickActionCategory#MOVEMENT} —
- *       {@code primaryId} = 0 (walk) or 1 (run), both currently unused
- *       by the renderer — kept for future telemetry/labelling.
  * </ul>
  *
  * <p>{@code label} is an optional short human-readable hint for tooltips

@@ -1,6 +1,9 @@
 package com.chromatick;
 
 import java.awt.Color;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
 import net.runelite.client.config.ConfigManager;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -23,6 +26,9 @@ import static org.mockito.Mockito.when;
  */
 public class ChromatickPanelSnapshotTest
 {
+	private static final Set<TickActionCategory> PRAYER_ONLY =
+		Collections.singleton(TickActionCategory.PROTECTION_PRAYER);
+
 	@Test
 	public void defaultsRoundTripThroughTheSnapshot()
 	{
@@ -30,7 +36,7 @@ public class ChromatickPanelSnapshotTest
 		// mirror them exactly.
 		ChromatickConfig cfg = mock(ChromatickConfig.class, Mockito.CALLS_REAL_METHODS);
 
-		ChromatickPanelSnapshot s = ChromatickPanelSnapshot.from(cfg, 4);
+		ChromatickPanelSnapshot s = ChromatickPanelSnapshot.from(cfg, 4, PRAYER_ONLY);
 
 		assertFalse(s.staticMode);
 		assertEquals(PaletteMode.GRID, s.paletteMode);
@@ -55,6 +61,7 @@ public class ChromatickPanelSnapshotTest
 		assertEquals(RecordMode.OFF, s.recordMode);
 		assertEquals(IconPosition.ABOVE, s.recordIconPosition);
 		assertEquals(1, s.recordArmTicks);
+		assertEquals(PRAYER_ONLY, s.recordCategories);
 		assertEquals(4, s.effectiveCycleLength);
 	}
 
@@ -91,8 +98,12 @@ public class ChromatickPanelSnapshotTest
 		when(cfg.recordMode()).thenReturn(RecordMode.ALWAYS);
 		when(cfg.recordIconPosition()).thenReturn(IconPosition.BELOW);
 		when(cfg.recordArmTicks()).thenReturn(7);
+		Set<TickActionCategory> threeCats = EnumSet.of(
+			TickActionCategory.PROTECTION_PRAYER,
+			TickActionCategory.RED_CLICK,
+			TickActionCategory.YELLOW_CLICK);
 
-		ChromatickPanelSnapshot s = ChromatickPanelSnapshot.from(cfg, 9);
+		ChromatickPanelSnapshot s = ChromatickPanelSnapshot.from(cfg, 9, threeCats);
 
 		assertTrue(s.staticMode);
 		assertEquals(PaletteMode.WHEEL, s.paletteMode);
@@ -119,6 +130,7 @@ public class ChromatickPanelSnapshotTest
 		assertEquals(RecordMode.ALWAYS, s.recordMode);
 		assertEquals(IconPosition.BELOW, s.recordIconPosition);
 		assertEquals(7, s.recordArmTicks);
+		assertEquals(threeCats, s.recordCategories);
 		assertEquals(9, s.effectiveCycleLength);
 	}
 
@@ -130,10 +142,24 @@ public class ChromatickPanelSnapshotTest
 		// config). Pass-through is the contract.
 		ChromatickConfig cfg = mock(ChromatickConfig.class, Mockito.CALLS_REAL_METHODS);
 
-		assertEquals(2,  ChromatickPanelSnapshot.from(cfg, 2).effectiveCycleLength);
-		assertEquals(10, ChromatickPanelSnapshot.from(cfg, 10).effectiveCycleLength);
+		assertEquals(2,  ChromatickPanelSnapshot.from(cfg, 2, PRAYER_ONLY).effectiveCycleLength);
+		assertEquals(10, ChromatickPanelSnapshot.from(cfg, 10, PRAYER_ONLY).effectiveCycleLength);
 		// Even nonsensical values are passed through — clamping is the
 		// caller's responsibility.
-		assertEquals(99, ChromatickPanelSnapshot.from(cfg, 99).effectiveCycleLength);
+		assertEquals(99, ChromatickPanelSnapshot.from(cfg, 99, PRAYER_ONLY).effectiveCycleLength);
+	}
+
+	@Test
+	public void recordCategoriesArePassedThroughUnchanged()
+	{
+		// The plugin parses recordCategories from a CSV string before
+		// calling from(...); the snapshot factory just stores the set.
+		ChromatickConfig cfg = mock(ChromatickConfig.class, Mockito.CALLS_REAL_METHODS);
+
+		Set<TickActionCategory> all = EnumSet.allOf(TickActionCategory.class);
+		assertEquals(all, ChromatickPanelSnapshot.from(cfg, 4, all).recordCategories);
+
+		Set<TickActionCategory> none = EnumSet.noneOf(TickActionCategory.class);
+		assertEquals(none, ChromatickPanelSnapshot.from(cfg, 4, none).recordCategories);
 	}
 }

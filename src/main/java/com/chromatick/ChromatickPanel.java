@@ -20,6 +20,7 @@ import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.function.IntConsumer;
 import javax.swing.Box;
@@ -131,6 +132,10 @@ class ChromatickPanel extends PluginPanel
 	private final JSlider    recordArmTicksSlider;
 	private final JLabel     recordArmTicksValueLabel;
 	private final RecordModeDot recordModeDot;
+	private final JCheckBox  capturePrayerBox;
+	private final JCheckBox  captureItemUseBox;
+	private final JCheckBox  captureRedClickBox;
+	private final JCheckBox  captureYellowClickBox;
 
 	private int  selectedCycle;
 	private Slot editing;
@@ -585,6 +590,10 @@ class ChromatickPanel extends PluginPanel
 		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
 		recordArmTicksSlider     = themedSlider(1, 10);
 		recordArmTicksValueLabel = compactValueLabel();
+		capturePrayerBox         = themedCheckBox();
+		captureItemUseBox        = themedCheckBox();
+		captureRedClickBox       = themedCheckBox();
+		captureYellowClickBox    = themedCheckBox();
 
 		// Mode pill — Off / Arm / Always — with a colored status dot mirroring
 		// the on-HUD indicator so users can see what the dot color means.
@@ -621,9 +630,29 @@ class ChromatickPanel extends PluginPanel
 		recordArmTicksSlider.setToolTipText(
 			"Ticks captured per ARM trigger (movement tick + N-1 more). Right-click to reset.");
 
+		// Capture-category checkboxes — what kind of events the recorder
+		// actually picks up. Each maps 1:1 to a TickActionCategory.
+		capturePrayerBox.setToolTipText("Capture the active Protect-from prayer each tick");
+		captureItemUseBox.setToolTipText("Capture use-on-X clicks (knife on log, herb on tar, etc.)");
+		captureRedClickBox.setToolTipText("Capture clicks where the cursor was red (attack-type)");
+		captureYellowClickBox.setToolTipText(
+			"Capture any other click — the cursor was yellow (walk-here, interact, etc.)");
+		capturePrayerBox.addActionListener(e ->
+			toggleRecordCategory(TickActionCategory.PROTECTION_PRAYER, capturePrayerBox.isSelected()));
+		captureItemUseBox.addActionListener(e ->
+			toggleRecordCategory(TickActionCategory.ITEM_USE, captureItemUseBox.isSelected()));
+		captureRedClickBox.addActionListener(e ->
+			toggleRecordCategory(TickActionCategory.RED_CLICK, captureRedClickBox.isSelected()));
+		captureYellowClickBox.addActionListener(e ->
+			toggleRecordCategory(TickActionCategory.YELLOW_CLICK, captureYellowClickBox.isSelected()));
+
 		hudBody.add(subgroupLabelRow("Recorder"));
 		hudBody.add(Box.createVerticalStrut(2));
 		hudBody.add(modeRowWithDot("Mode", recordModeToggle, recordModeDot));
+		hudBody.add(labeledCheckBoxRow("Prayer",       capturePrayerBox));
+		hudBody.add(labeledCheckBoxRow("Item use",     captureItemUseBox));
+		hudBody.add(labeledCheckBoxRow("Red click",    captureRedClickBox));
+		hudBody.add(labeledCheckBoxRow("Yellow click", captureYellowClickBox));
 		hudBody.add(labeledToggleRow("Icons", recordIconPositionToggle));
 		hudBody.add(labeledSliderRow("Arm length", recordArmTicksSlider, recordArmTicksValueLabel));
 
@@ -686,6 +715,7 @@ class ChromatickPanel extends PluginPanel
 		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
+		applyCaptureCheckboxes(s.recordCategories);
 
 		selectedCycle = PaletteService.clampCycle(s.effectiveCycleLength);
 		applyModeVisibility(s.staticMode);
@@ -724,6 +754,39 @@ class ChromatickPanel extends PluginPanel
 		hudSection.setVisible(hud);
 		revalidate();
 		repaint();
+	}
+
+	/**
+	 * Sync the four capture-category checkboxes to the snapshot's set.
+	 * Uses {@code setSelected} which doesn't fire ActionListeners, so this
+	 * is safe to call from refresh without listener-suppression dance.
+	 */
+	private void applyCaptureCheckboxes(java.util.Set<TickActionCategory> categories)
+	{
+		capturePrayerBox.setSelected(categories.contains(TickActionCategory.PROTECTION_PRAYER));
+		captureItemUseBox.setSelected(categories.contains(TickActionCategory.ITEM_USE));
+		captureRedClickBox.setSelected(categories.contains(TickActionCategory.RED_CLICK));
+		captureYellowClickBox.setSelected(categories.contains(TickActionCategory.YELLOW_CLICK));
+	}
+
+	/**
+	 * Add or remove a category from the recorder's enabled set and persist
+	 * via the plugin. Reads the current set fresh each time to avoid TOCTOU
+	 * with concurrent ConfigChanged events.
+	 */
+	private void toggleRecordCategory(TickActionCategory category, boolean enabled)
+	{
+		EnumSet<TickActionCategory> current = EnumSet.noneOf(TickActionCategory.class);
+		current.addAll(plugin.snapshot().recordCategories);
+		if (enabled)
+		{
+			current.add(category);
+		}
+		else
+		{
+			current.remove(category);
+		}
+		plugin.setRecordCategories(current);
 	}
 
 	/**
@@ -878,6 +941,7 @@ class ChromatickPanel extends PluginPanel
 		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
+		applyCaptureCheckboxes(s.recordCategories);
 	}
 
 	void onPaletteChanged(int cycleN)

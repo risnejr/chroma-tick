@@ -194,6 +194,18 @@ public interface ChromatickConfig extends Config
 		return 1;
 	}
 
+	/**
+	 * CSV of {@link TickActionCategory} names the recorder captures. The
+	 * default is PROTECTION_PRAYER alone, matching the pre-categories
+	 * behavior — existing users see no change until they enable more
+	 * categories from the panel.
+	 */
+	@ConfigItem(keyName = "recordCategories", name = "", description = "", hidden = true)
+	default String recordCategories()
+	{
+		return "PROTECTION_PRAYER";
+	}
+
 	// ─── Hotkeys ──────────────────────────────────────────────────────────
 
 	@ConfigSection(

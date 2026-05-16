@@ -176,23 +176,80 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	/**
 	 * Build the list of {@link TickActionEvent}s captured this game tick.
-	 * Currently only PROTECTION_PRAYER events are emitted; the upcoming
-	 * capture service will add click / item-use / movement events here
-	 * (or buffer them via {@code @Subscribe} and have this method drain).
+	 * Filters by the user's enabled categories — disabled categories never
+	 * make it into the buffer, so the recorder's storage and the HUD
+	 * timeline stay tight.
+	 *
+	 * <p>Currently only PROTECTION_PRAYER events are emitted; click and
+	 * item-use events land in the next commits and add their own branches.
 	 */
 	private List<TickActionEvent> buildTickEvents()
 	{
-		Set<Prayer> active = activeProtectPrayers();
-		if (active.isEmpty())
+		Set<TickActionCategory> enabled = enabledRecordCategories();
+		if (enabled.isEmpty())
 		{
 			return Collections.emptyList();
 		}
-		List<TickActionEvent> events = new ArrayList<>(active.size());
-		for (Prayer p : active)
+		List<TickActionEvent> events = new ArrayList<>();
+		if (enabled.contains(TickActionCategory.PROTECTION_PRAYER))
 		{
-			events.add(TickActionEvent.of(TickActionCategory.PROTECTION_PRAYER, p.ordinal()));
+			for (Prayer p : activeProtectPrayers())
+			{
+				events.add(TickActionEvent.of(TickActionCategory.PROTECTION_PRAYER, p.ordinal()));
+			}
 		}
 		return events;
+	}
+
+	/**
+	 * Parse the {@code recordCategories} CSV config into a typed set.
+	 * Unknown names are silently skipped — keeps forward-compat if a
+	 * future build adds a category an older config string doesn't know.
+	 */
+	Set<TickActionCategory> enabledRecordCategories()
+	{
+		String csv = config.recordCategories();
+		if (csv == null || csv.isEmpty())
+		{
+			return EnumSet.noneOf(TickActionCategory.class);
+		}
+		EnumSet<TickActionCategory> set = EnumSet.noneOf(TickActionCategory.class);
+		for (String name : csv.split(","))
+		{
+			String trimmed = name.trim();
+			if (trimmed.isEmpty())
+			{
+				continue;
+			}
+			try
+			{
+				set.add(TickActionCategory.valueOf(trimmed));
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// unknown category — skip silently
+			}
+		}
+		return set;
+	}
+
+	void setRecordCategories(Set<TickActionCategory> categories)
+	{
+		StringBuilder sb = new StringBuilder();
+		// Use enum declaration order for stable CSV ordering — easier diffs
+		// and consistent serialization.
+		for (TickActionCategory c : TickActionCategory.values())
+		{
+			if (categories.contains(c))
+			{
+				if (sb.length() > 0)
+				{
+					sb.append(',');
+				}
+				sb.append(c.name());
+			}
+		}
+		configManager.setConfiguration("chromatick", "recordCategories", sb.toString());
 	}
 
 	@Subscribe
@@ -230,7 +287,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key)
 			|| "hudVertical".equals(key)
 			|| "recordMode".equals(key) || "recordIconPosition".equals(key)
-			|| "recordArmTicks".equals(key))
+			|| "recordArmTicks".equals(key) || "recordCategories".equals(key))
 		{
 			// Active state changed — panel mirrors active state. hudAnchorTarget is
 			// here so the panel pill toggle flips to "None" when the overlay
@@ -500,7 +557,8 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	 */
 	ChromatickPanelSnapshot snapshot()
 	{
-		return ChromatickPanelSnapshot.from(config, getEffectiveCycleLength());
+		return ChromatickPanelSnapshot.from(config, getEffectiveCycleLength(),
+			enabledRecordCategories());
 	}
 
 	private Keybind getCycleHotkeyByLength(int n)
