@@ -67,14 +67,16 @@ public class PrayerRecorderServiceTest
 	}
 
 	@Test
-	public void transitioningToOffClearsBuffer()
+	public void transitioningToOffPreservesBuffer()
 	{
+		// Manual stop should leave the recording visible — only re-arming
+		// (or explicit clear()) wipes the buffer.
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(2, MELEE, false, 2);
 		assertEquals(MELEE, recorder.getPrayersAtTick(2));
 
 		recorder.setMode(RecordMode.OFF);
-		assertTrue(recorder.getPrayersAtTick(2).isEmpty());
+		assertEquals(MELEE, recorder.getPrayersAtTick(2));
 	}
 
 	// ─── ALWAYS mode ────────────────────────────────────────────────────
@@ -262,16 +264,80 @@ public class PrayerRecorderServiceTest
 	}
 
 	@Test
-	public void switchingAlwaysToArmStopsCapturingUntilMovement()
+	public void switchingAlwaysToArmClearsExistingCaptures()
 	{
+		// Re-arming = fresh capture session, so any prior buffer is wiped.
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(0, MELEE, false, 2);
+		assertEquals(MELEE, recorder.getPrayersAtTick(0));
 
 		recorder.setMode(RecordMode.ARM);
+		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+
+		// And: nothing captured until movement.
 		recorder.onTick(1, MAGIC, false, 2);
-		// Old MELEE preserved; new tick not captured (no movement).
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
 		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+	}
+
+	@Test
+	public void switchingOffToArmClearsAnyResidualCaptures()
+	{
+		// Auto-exit leaves recordings around; the next ARM trigger should
+		// start clean.
+		recorder.setMode(RecordMode.ARM);
+		recorder.onTick(0, MELEE, true, 1); // captures and auto-exits to OFF
+
+		assertEquals(RecordMode.OFF, recorder.getMode());
+		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+
+		recorder.setMode(RecordMode.ARM);
+		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+	}
+
+	// ─── ARM auto-exit ──────────────────────────────────────────────────
+
+	@Test
+	public void armAutoExitsToOffWhenWindowExpires()
+	{
+		recorder.setMode(RecordMode.ARM);
+		recorder.onTick(0, MELEE, true, 2); // window starts, captures
+		assertEquals(RecordMode.ARM, recorder.getMode());
+		recorder.onTick(1, MAGIC, false, 2); // window decrements to 0
+		assertEquals(RecordMode.OFF, recorder.getMode());
+	}
+
+	@Test
+	public void armAutoExitPreservesRecordings()
+	{
+		recorder.setMode(RecordMode.ARM);
+		recorder.onTick(0, MELEE, true, 1); // captures and auto-exits
+
+		assertEquals(RecordMode.OFF, recorder.getMode());
+		// Captured prayer remains visible after auto-exit.
+		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+	}
+
+	@Test
+	public void armAutoExitStopsFurtherCapturesEvenOnMovement()
+	{
+		recorder.setMode(RecordMode.ARM);
+		recorder.onTick(0, MELEE, true, 1); // captures and auto-exits to OFF
+		// Movement after auto-exit must not re-arm (mode is OFF now).
+		recorder.onTick(1, MAGIC, true, 1);
+		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+	}
+
+	// ─── hasCaptures ────────────────────────────────────────────────────
+
+	@Test
+	public void hasCapturesReflectsBufferState()
+	{
+		assertFalse(recorder.hasCaptures());
+		recorder.setMode(RecordMode.ALWAYS);
+		recorder.onTick(0, MELEE, false, 2);
+		assertTrue(recorder.hasCaptures());
+		recorder.clear();
+		assertFalse(recorder.hasCaptures());
 	}
 
 	// ─── Defensive ──────────────────────────────────────────────────────
