@@ -7,7 +7,6 @@ import java.util.EnumSet;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
-import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
@@ -56,6 +55,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private PrayerRecorderService recorder;
 
 	@Inject
+	private ChromatickRuntimeState state;
+
+	@Inject
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
@@ -69,20 +71,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	@Inject
 	private ClientToolbar clientToolbar;
-
-	/** Current position in the color cycle (0-based). */
-	@Getter
-	protected int tickIndex = 0;
-
-	/** The current color to render this tick. */
-	@Getter
-	protected Color currentColor = Color.WHITE;
-
-	/** Hotkey override for cycle length; -1 = use config slider value. */
-	private int cycleLengthOverride = -1;
-
-	/** World position last game tick — used to detect movement for the recorder. */
-	private WorldPoint lastWorldPoint = null;
 
 	private ChromatickPanel panel;
 	private NavigationButton navButton;
@@ -99,11 +87,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		migrateLegacyEnumValues();
 		applyDisplayMode();
 		keyManager.registerKeyListener(this);
-		tickIndex = 0;
-		cycleLengthOverride = -1;
-		lastWorldPoint = null;
+		state.reset();
 		recorder.setMode(config.recordMode());
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
 
 		panel = new ChromatickPanel(this, palettes);
 		navButton = NavigationButton.builder()
@@ -127,8 +113,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			navButton = null;
 		}
 		panel = null;
-		tickIndex = 0;
-		lastWorldPoint = null;
+		state.reset();
 		recorder.clear();
 	}
 
@@ -139,19 +124,21 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		// Static mode freezes the *color*, not the cycle. The HUD overlay still
 		// uses tickIndex to advance its active-glyph highlight.
 		int cycleLength = getEffectiveCycleLength();
-		tickIndex = (tickIndex + 1) % cycleLength;
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+		int nextTick = (state.getTickIndex() + 1) % cycleLength;
+		state.setTickIndex(nextTick);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(nextTick));
 
 		// Feed the prayer recorder. Cheap when mode == OFF (early return).
 		Player local = client.getLocalPlayer();
 		WorldPoint pos = local != null ? local.getWorldLocation() : null;
-		boolean moved = pos != null && lastWorldPoint != null && !lastWorldPoint.equals(pos);
+		WorldPoint last = state.getLastWorldPoint();
+		boolean moved = pos != null && last != null && !last.equals(pos);
 		if (pos != null)
 		{
-			lastWorldPoint = pos;
+			state.setLastWorldPoint(pos);
 		}
 		RecordMode beforeMode = recorder.getMode();
-		recorder.onTick(tickIndex, activeProtectPrayers(), moved, config.recordArmTicks());
+		recorder.onTick(nextTick, activeProtectPrayers(), moved, config.recordArmTicks());
 		RecordMode afterMode = recorder.getMode();
 		if (beforeMode != afterMode)
 		{
@@ -179,12 +166,13 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		String key = event.getKey();
 		if ("cycleLength".equals(key))
 		{
-			cycleLengthOverride = -1;
+			state.clearCycleLengthOverride();
 			clampRecordArmTicksToCycle();
 		}
 		int cycleLength = getEffectiveCycleLength();
-		tickIndex = tickIndex % cycleLength;
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+		int idx = state.getTickIndex() % cycleLength;
+		state.setTickIndex(idx);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(idx));
 
 		if ("displayMode".equals(key))
 		{
@@ -243,7 +231,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			if (getCycleHotkeyByLength(n).matches(e))
 			{
-				cycleLengthOverride = n;
+				state.setCycleLengthOverride(n);
 				clampRecordArmTicksToCycle();
 				if (panel != null)
 				{
@@ -255,9 +243,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 		if (config.resetCycleHotkey().matches(e))
 		{
-			cycleLengthOverride = -1;
-			tickIndex = 0;
-			currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
+			state.clearCycleLengthOverride();
+			state.setTickIndex(0);
+			state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
 			clampRecordArmTicksToCycle();
 			if (panel != null)
 			{
@@ -271,13 +259,23 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	public int getEffectiveCycleLength()
 	{
-		return cycleLengthOverride > 0 ? cycleLengthOverride : config.cycleLength();
+		return state.effectiveCycleLength(config.cycleLength());
+	}
+
+	public int getTickIndex()
+	{
+		return state.getTickIndex();
+	}
+
+	public Color getCurrentColor()
+	{
+		return state.getCurrentColor();
 	}
 
 	/** Make {@code n} the active cycle, clearing any hotkey override. */
 	void setActiveCycle(int n)
 	{
-		cycleLengthOverride = -1;
+		state.clearCycleLengthOverride();
 		configManager.setConfiguration("chromatick", "cycleLength", PaletteService.clampCycle(n));
 	}
 
