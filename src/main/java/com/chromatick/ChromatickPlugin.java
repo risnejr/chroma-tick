@@ -150,7 +150,14 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			lastWorldPoint = pos;
 		}
+		RecordMode beforeMode = recorder.getMode();
 		recorder.onTick(tickIndex, activeProtectPrayers(), moved, config.recordArmTicks());
+		RecordMode afterMode = recorder.getMode();
+		if (beforeMode != afterMode)
+		{
+			// ARM auto-exited to OFF; persist so the panel + config reflect it.
+			configManager.setConfiguration("chromatick", "recordMode", afterMode);
+		}
 	}
 
 	private Set<Prayer> activeProtectPrayers()

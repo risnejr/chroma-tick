@@ -15,11 +15,23 @@ import net.runelite.api.Prayer;
  *
  * <p>Mode semantics:
  * <ul>
- *   <li>{@link RecordMode#OFF} — never captures; on entry, clears the buffer.
+ *   <li>{@link RecordMode#OFF} — never captures.
  *   <li>{@link RecordMode#ARM} — captures the movement tick and a
- *       configurable trailing window (armTicks total).
+ *       configurable trailing window (armTicks total). When the window
+ *       expires, the recorder transitions itself to OFF (one-shot) but
+ *       <em>preserves</em> the captured buffer so the user can review it.
  *   <li>{@link RecordMode#ALWAYS} — captures every tick; subsequent cycles
  *       overdub at the same tick index.
+ * </ul>
+ *
+ * <p>Buffer lifecycle:
+ * <ul>
+ *   <li>Entering ARM (from any other state) clears the buffer — each ARM
+ *       trigger is a fresh capture.
+ *   <li>All other transitions preserve the buffer (the ARM auto-exit, the
+ *       Always-overdub model, and manual switches to OFF).
+ *   <li>{@link #clear()} is the explicit forget-everything path used at
+ *       shutdown.
  * </ul>
  *
  * <p>Recordings are keyed by tick-index-in-cycle. Cycle-length changes are
@@ -40,13 +52,14 @@ class PrayerRecorderService
 	}
 
 	/**
-	 * Set the recorder mode. Transitioning to {@link RecordMode#OFF} clears
-	 * the captured buffer; transitions between ARM and ALWAYS preserve it
-	 * (new captures simply overdub).
+	 * Set the recorder mode. Entering ARM (from a non-ARM state) clears
+	 * the buffer to start a fresh capture session. Other transitions —
+	 * including manual moves to OFF and the auto-exit from ARM after a
+	 * window expires — preserve the buffer so the recording stays visible.
 	 */
 	void setMode(RecordMode next)
 	{
-		if (next == RecordMode.OFF)
+		if (next == RecordMode.ARM && this.mode != RecordMode.ARM)
 		{
 			clear();
 		}
@@ -88,9 +101,22 @@ class PrayerRecorderService
 				{
 					capture(tickIndex, activePrayers);
 					armRemaining--;
+					if (armRemaining == 0)
+					{
+						// One-shot: window expired, exit ARM. Direct assignment
+						// (not via setMode) so the captured buffer is preserved
+						// for the user to review.
+						mode = RecordMode.OFF;
+					}
 				}
 				return;
 		}
+	}
+
+	/** True if the buffer holds at least one tick's worth of recorded prayers. */
+	boolean hasCaptures()
+	{
+		return !store.isEmpty();
 	}
 
 	/** Prayers captured at this tick-in-cycle, or an empty set if none. */

@@ -117,7 +117,10 @@ public class ChromatickHudOverlay extends Overlay
 		final Color[] palette = resolvePalette(cycleLength);
 		final boolean cycleInPlace = config.hudCycleInPlace();
 		final RecordMode recordMode = recorder.getMode();
-		final boolean wantIcons = recordMode != RecordMode.OFF;
+		// Keep icons visible after a one-shot ARM has auto-exited so the user
+		// can review the recording. Hidden only when mode is OFF AND there's
+		// nothing to show.
+		final boolean wantIcons = recordMode != RecordMode.OFF || recorder.hasCaptures();
 
 		final HudLayout layout = HudLayout.compute(
 			config.hudScale(),
