@@ -79,10 +79,12 @@ class TickActionCapture
 	 */
 	private TickActionEvent classify(MenuOptionClicked event)
 	{
-		if (isItemUseAction(event.getMenuAction()))
+		MenuAction action = event.getMenuAction();
+		if (isItemUseAction(action))
 		{
 			int sourceItemId = selectedItemId();
-			return TickActionEvent.of(TickActionCategory.ITEM_USE, sourceItemId);
+			int targetItemId = targetItemId(event, action);
+			return TickActionEvent.of(TickActionCategory.ITEM_USE, sourceItemId, targetItemId);
 		}
 		String option = event.getMenuOption();
 		if (option != null && option.equalsIgnoreCase("Attack"))
@@ -129,5 +131,21 @@ class TickActionCapture
 		}
 		int itemId = selected.getItemId();
 		return itemId > 0 ? itemId : TickActionEvent.NONE;
+	}
+
+	/**
+	 * Target item ID for an item-use event, or {@link TickActionEvent#NONE}.
+	 * Only WIDGET_TARGET_ON_WIDGET clicks have a target inventory item —
+	 * use-on-NPC / object / ground-item / player don't, so we return NONE
+	 * and the resolver renders the source alone.
+	 */
+	private static int targetItemId(MenuOptionClicked event, MenuAction action)
+	{
+		if (action != MenuAction.WIDGET_TARGET_ON_WIDGET)
+		{
+			return TickActionEvent.NONE;
+		}
+		int id = event.getItemId();
+		return id > 0 ? id : TickActionEvent.NONE;
 	}
 }

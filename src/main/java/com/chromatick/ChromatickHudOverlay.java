@@ -111,6 +111,11 @@ public class ChromatickHudOverlay extends Overlay
 		// can review the recording. Hidden only when mode is OFF AND there's
 		// nothing to show.
 		final boolean wantIcons = recordMode != RecordMode.OFF || recorder.hasCaptures();
+		// Combo layout reserves a second icon band so ITEM_USE renders
+		// source + target on opposite sides of the glyph row instead of
+		// cramming both into one slot.
+		final boolean comboCapable = plugin.enabledRecordCategories()
+			.contains(TickActionCategory.ITEM_USE);
 
 		final HudLayout layout = HudLayout.compute(
 			config.hudScale(),
@@ -120,7 +125,8 @@ public class ChromatickHudOverlay extends Overlay
 			config.hudVertical(),
 			cycleInPlace,
 			wantIcons,
-			config.recordIconPosition()
+			config.recordIconPosition(),
+			comboCapable
 		);
 
 		if (layout.showIcons)
@@ -362,9 +368,9 @@ public class ChromatickHudOverlay extends Overlay
 	// ─── Per-tick recorder ──────────────────────────────────────────────
 
 	/**
-	 * Render the recorded icon (if any) for tick slot {@code k}. Sprite
-	 * vs primitive-dot is decided in {@link RecordedIconResolver}; the
-	 * overlay just draws what it gets.
+	 * Render the recorded icon (if any) for tick slot {@code k}. Sprite,
+	 * combo (two sprites), or primitive-dot is decided in
+	 * {@link RecordedIconResolver}; the overlay just draws what it gets.
 	 */
 	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
 	{
@@ -388,6 +394,12 @@ public class ChromatickHudOverlay extends Overlay
 			g2.setColor(icon.primitiveColor);
 			g2.fillOval(cx - size / 2, cy - size / 2, size, size);
 			g2.dispose();
+		}
+		if (icon.secondarySprite != null && layout.comboLayout)
+		{
+			int sx = layout.comboIconCenterX(k);
+			int sy = layout.comboIconCenterY(k);
+			g.drawImage(icon.secondarySprite, sx - size / 2, sy - size / 2, size, size, null);
 		}
 	}
 

@@ -340,4 +340,109 @@ public class HudLayoutTest
 		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.ABOVE);
 		assertEquals(Math.max(6, l.iconBandPx - 2), l.iconSize());
 	}
+
+	// ─── Combo layout (ITEM_USE source + target opposite the glyph row) ───
+
+	@Test
+	public void comboLayoutReservesSecondBandOppositeThePrimary()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, false, true, IconPosition.ABOVE, true);
+		assertTrue(l.showIcons);
+		assertTrue(l.comboLayout);
+		assertEquals(10, l.iconBandPx);
+		// primary band(10) + glyph row(10) + secondary band(10) + margins(4) = 34.
+		assertEquals(34, l.totalHeight);
+	}
+
+	@Test
+	public void comboLayoutAbovePutsPrimaryUpAndSecondaryDown()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, false, true, IconPosition.ABOVE, true);
+		// Primary band centered at top: y = margin + iconBand/2.
+		assertEquals(MARGIN + 5, l.iconCenterY(0));
+		// Glyph row pushed down by one icon band.
+		assertEquals(MARGIN + 10 + 5, l.cellCenterY(0));
+		// Secondary band at the bottom: y = margin + iconBand + glyphRow + iconBand/2.
+		assertEquals(MARGIN + 10 + 10 + 5, l.comboIconCenterY(0));
+	}
+
+	@Test
+	public void comboLayoutBelowMirrorsTheArrangement()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, false, true, IconPosition.BELOW, true);
+		// In BELOW + combo, the secondary lives ABOVE the glyph row and the
+		// primary BELOW. Glyph still sits between them.
+		assertEquals(MARGIN + 5, l.comboIconCenterY(0));
+		assertEquals(MARGIN + 10 + 5, l.cellCenterY(0));
+		assertEquals(MARGIN + 10 + 10 + 5, l.iconCenterY(0));
+	}
+
+	@Test
+	public void comboInVerticalModeUsesLeftAndRightColumns()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			true, false, true, IconPosition.ABOVE, true);
+		assertTrue(l.comboLayout);
+		// Cross-axis is now WIDTH: primary(10) + glyph(10) + secondary(10) + margins(4) = 34.
+		assertEquals(34, l.totalWidth);
+		// Primary column on the left (iconPosition=ABOVE).
+		assertEquals(MARGIN + 5, l.iconCenterX(0));
+		// Glyph column shifted right by one band.
+		assertEquals(MARGIN + 10 + 5, l.cellCenterX(0));
+		// Secondary column on the right.
+		assertEquals(MARGIN + 10 + 10 + 5, l.comboIconCenterX(0));
+	}
+
+	@Test
+	public void comboHorizontalIconsAlignWithTheirSlotXOnBothBands()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, false, true, IconPosition.ABOVE, true);
+		for (int k = 0; k < l.slots; k++)
+		{
+			assertEquals("primary icon column aligns with glyph k=" + k,
+				l.cellCenterX(k), l.iconCenterX(k));
+			assertEquals("secondary icon column aligns with glyph k=" + k,
+				l.cellCenterX(k), l.comboIconCenterX(k));
+		}
+	}
+
+	@Test
+	public void comboLayoutWithoutIconsCollapsesToNoCombo()
+	{
+		// comboCapable is moot when wantIcons=false — there's no icon band
+		// to reserve a second copy of.
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, false, false, IconPosition.ABOVE, true);
+		assertFalse(l.showIcons);
+		assertFalse(l.comboLayout);
+		assertEquals(-1, l.comboIconCenterX(0));
+		assertEquals(-1, l.comboIconCenterY(0));
+		// Total height = single glyph row + margins, no icon bands.
+		assertEquals(10 + 2 * MARGIN, l.totalHeight);
+	}
+
+	@Test
+	public void cycleInPlaceSuppressesComboLayoutToo()
+	{
+		// Single-slot cycle-in-place has no timeline; combo is moot.
+		HudLayout l = HudLayout.compute(100, 0, 0, 4,
+			false, true, true, IconPosition.ABOVE, true);
+		assertFalse(l.showIcons);
+		assertFalse(l.comboLayout);
+	}
+
+	@Test
+	public void comboBandScalesWithGlyphScale()
+	{
+		HudLayout l = HudLayout.compute(200, 0, 0, 4,
+			false, false, true, IconPosition.ABOVE, true);
+		// At 2x scale: cellSize=20 → iconBandPx=20.
+		// totalH = 20 + 20 + 20 + 2*MARGIN = 60 + 2*MARGIN.
+		assertEquals(20, l.iconBandPx);
+		assertEquals(20 + 20 + 20 + 2 * MARGIN, l.totalHeight);
+	}
 }

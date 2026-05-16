@@ -172,21 +172,31 @@ class RecordedIconResolver
 	}
 
 	/**
-	 * Render the source-item sprite for an ITEM_USE event. ItemManager
-	 * returns an AsyncBufferedImage that paints itself once loaded, so
-	 * the first few frames may show empty until the load completes. If
-	 * we don't have a source item ID (no widget was selected at click
-	 * time, e.g. spell-cast click) fall back to a muted dot so the user
-	 * still sees "an item-use happened here".
+	 * Render an ITEM_USE event:
+	 * <ul>
+	 *   <li>Both source + target known → combo (two sprites, opposite sides
+	 *       of the glyph row — knife + log, herb + tar, etc.).
+	 *   <li>Source only known → single sprite of the source item.
+	 *   <li>Neither known (selection lookup failed) → muted cyan fallback dot.
+	 * </ul>
+	 * ItemManager returns an AsyncBufferedImage that self-paints once the
+	 * underlying item icon has loaded.
 	 */
 	private RecordedIcon itemUseIcon(TickActionEvent event)
 	{
 		int sourceId = event.primaryId();
+		int targetId = event.secondaryId();
 		if (sourceId <= 0)
 		{
 			return RecordedIcon.dot(ITEM_USE_FALLBACK);
 		}
-		return RecordedIcon.sprite(itemManager.getImage(sourceId));
+		BufferedImage source = itemManager.getImage(sourceId);
+		if (targetId > 0)
+		{
+			BufferedImage target = itemManager.getImage(targetId);
+			return RecordedIcon.combo(source, target);
+		}
+		return RecordedIcon.sprite(source);
 	}
 
 	/** {@code primaryId} = {@link Prayer#ordinal()}. Defensive bounds check. */
