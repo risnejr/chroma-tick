@@ -239,7 +239,8 @@ public class HudLayoutTest
 		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false);
 		assertFalse(l.showIcons);
 		assertEquals(0, l.iconBandPx);
-		assertEquals(-1, l.iconCenterY());
+		assertEquals(-1, l.iconCenterY(0));
+		assertEquals(-1, l.iconCenterX(0));
 		assertEquals(10 + 2 * MARGIN, l.totalHeight);
 	}
 
@@ -253,8 +254,12 @@ public class HudLayoutTest
 		assertEquals(24, l.totalHeight);
 		// Glyph row shifts down to make room for the icon band.
 		assertEquals(MARGIN + 10 + 5, l.cellCenterY(0));
-		// Icons center within their band at the top.
-		assertEquals(MARGIN + 5, l.iconCenterY());
+		// Icons center within their band at the top — at every column.
+		assertEquals(MARGIN + 5, l.iconCenterY(0));
+		assertEquals(MARGIN + 5, l.iconCenterY(3));
+		// Icon X aligns with the glyph column's X.
+		assertEquals(l.cellCenterX(0), l.iconCenterX(0));
+		assertEquals(l.cellCenterX(3), l.iconCenterX(3));
 	}
 
 	@Test
@@ -267,16 +272,38 @@ public class HudLayoutTest
 		// Glyph row stays put.
 		assertEquals(MARGIN + 5, l.cellCenterY(0));
 		// Icons sit under the glyph row.
-		assertEquals(MARGIN + 10 + 5, l.iconCenterY());
+		assertEquals(MARGIN + 10 + 5, l.iconCenterY(0));
+		assertEquals(l.cellCenterX(0), l.iconCenterX(0));
 	}
 
 	@Test
-	public void iconBandIsSuppressedInVerticalMode()
+	public void iconBandWorksInVerticalModeAsLeftColumnWhenAbove()
 	{
 		HudLayout l = HudLayout.compute(100, 0, 0, 4, true, false, true, IconPosition.ABOVE);
-		assertFalse(l.showIcons);
-		assertEquals(0, l.iconBandPx);
-		assertEquals(-1, l.iconCenterY());
+		assertTrue(l.showIcons);
+		assertEquals(10, l.iconBandPx);
+		// Cross-axis is now WIDTH: cellSize(10) + iconBandPx(10) + margins(4) = 24.
+		assertEquals(24, l.totalWidth);
+		// Glyph column shifts right to make room for the icon column on the left.
+		assertEquals(MARGIN + 10 + 5, l.cellCenterX(0));
+		// Icons sit in the left column, sharing the glyph column's Y.
+		assertEquals(MARGIN + 5, l.iconCenterX(0));
+		assertEquals(MARGIN + 5, l.iconCenterX(3));
+		assertEquals(l.cellCenterY(0), l.iconCenterY(0));
+		assertEquals(l.cellCenterY(3), l.iconCenterY(3));
+	}
+
+	@Test
+	public void iconBandWorksInVerticalModeAsRightColumnWhenBelow()
+	{
+		HudLayout l = HudLayout.compute(100, 0, 0, 4, true, false, true, IconPosition.BELOW);
+		assertTrue(l.showIcons);
+		assertEquals(24, l.totalWidth);
+		// Glyph column stays on the left.
+		assertEquals(MARGIN + 5, l.cellCenterX(0));
+		// Icons sit in the right column.
+		assertEquals(MARGIN + 10 + 5, l.iconCenterX(0));
+		assertEquals(l.cellCenterY(0), l.iconCenterY(0));
 	}
 
 	@Test
@@ -297,14 +324,13 @@ public class HudLayoutTest
 	}
 
 	@Test
-	public void iconCenterXAlignsWithCellCenterX()
+	public void iconCenterXAlignsWithCellCenterXInHorizontalMode()
 	{
 		HudLayout l = HudLayout.compute(100, 0, 0, 4, false, false, true, IconPosition.ABOVE);
-		// Icons render at the same X as their tick column.
 		for (int k = 0; k < l.slots; k++)
 		{
 			assertEquals("icon column should align with glyph k=" + k,
-				l.cellCenterX(k), l.cellCenterX(k));
+				l.cellCenterX(k), l.iconCenterX(k));
 		}
 	}
 

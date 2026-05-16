@@ -5,10 +5,17 @@ package com.chromatick;
  * spacing and bounding dimensions from raw config inputs so the geometry
  * can be unit-tested without a real overlay/render context.
  *
- * <p>Optionally reserves an icon band above or below the glyph row, used
- * by the per-tick prayer recorder. The icon band is only present in
- * horizontal row mode (i.e. not vertical, not cycle-in-place) and uses the
- * cell size as its height, so icons stay proportional to the glyphs.
+ * <p>Optionally reserves an icon band alongside the glyph row, used by the
+ * per-tick prayer recorder. The band is only present in row layouts (i.e.
+ * not cycle-in-place) and uses the cell size as its cross-axis thickness,
+ * so icons stay proportional to the glyphs.
+ *
+ * <p>Orientation:
+ * <ul>
+ *   <li>Horizontal row: icons go ABOVE or BELOW the glyph row.
+ *   <li>Vertical column: icons go to the LEFT (ABOVE) or RIGHT (BELOW) of
+ *       the glyph column.
+ * </ul>
  */
 final class HudLayout
 {
@@ -26,7 +33,7 @@ final class HudLayout
 
 	/** True when an icon band is present (and large enough to render). */
 	final boolean showIcons;
-	/** Height of the icon band in px; 0 when {@link #showIcons} is false. */
+	/** Cross-axis thickness of the icon band in px; 0 when {@link #showIcons} is false. */
 	final int iconBandPx;
 	final IconPosition iconPosition;
 
@@ -55,11 +62,11 @@ final class HudLayout
 	}
 
 	/**
-	 * Bar with an optional icon band above or below the glyph row.
+	 * Bar with an optional icon band alongside the glyph row.
 	 *
-	 * <p>The icon band is only honored in horizontal row mode — vertical
-	 * orientation and cycle-in-place mode force {@code showIcons=false}
-	 * regardless of the {@code wantIcons} argument.
+	 * <p>The icon band is only honored in row layouts — cycle-in-place mode
+	 * forces {@code showIcons=false} regardless of the {@code wantIcons}
+	 * argument (a single glyph has no timeline to align icons against).
 	 */
 	static HudLayout compute(int scalePct, int popPct, int spacingPx,
 		int cycleLength, boolean vertical, boolean cycleInPlace,
@@ -75,8 +82,8 @@ final class HudLayout
 		final int slots = cycleInPlace ? 1 : cycleLength;
 		final int mainAxisLen = Math.max(cellSize, slots * cellSize + (slots - 1) * gap);
 
-		// Icons only make sense alongside a timeline — disable in vertical/in-place modes.
-		final boolean showIcons = wantIcons && !vertical && !cycleInPlace;
+		// Icons need a timeline to align against — disable in cycle-in-place mode.
+		final boolean showIcons = wantIcons && !cycleInPlace;
 		final int iconBandPx = showIcons ? cellSize : 0;
 
 		final int crossAxisLen = cellSize + iconBandPx;
@@ -90,19 +97,19 @@ final class HudLayout
 	/** X center of slot {@code k} relative to the overlay's top-left. */
 	int cellCenterX(int k)
 	{
-		int cellOffset = k * (cellSize + gap);
-		int cellX = MARGIN_PX + (vertical ? 0 : cellOffset);
-		return cellX + cellSize / 2;
+		int cellOffset = vertical ? 0 : k * (cellSize + gap);
+		int iconShift = (showIcons && vertical && iconPosition == IconPosition.ABOVE)
+			? iconBandPx : 0;
+		return MARGIN_PX + iconShift + cellOffset + cellSize / 2;
 	}
 
 	/** Y center of slot {@code k} relative to the overlay's top-left. */
 	int cellCenterY(int k)
 	{
-		int cellOffset = k * (cellSize + gap);
-		// When the icon band sits above the row, the glyph row shifts down by iconBandPx.
-		int rowTopY = MARGIN_PX
-			+ (showIcons && iconPosition == IconPosition.ABOVE ? iconBandPx : 0);
-		return rowTopY + (vertical ? cellOffset : 0) + cellSize / 2;
+		int cellOffset = vertical ? k * (cellSize + gap) : 0;
+		int iconShift = (showIcons && !vertical && iconPosition == IconPosition.ABOVE)
+			? iconBandPx : 0;
+		return MARGIN_PX + iconShift + cellOffset + cellSize / 2;
 	}
 
 	/**
@@ -115,13 +122,37 @@ final class HudLayout
 		return active ? Math.max(baseGlyph, cellSize - 2) : baseGlyph;
 	}
 
-	/** Center Y of the icon band, or -1 when no icon band is shown. */
-	int iconCenterY()
+	/** X center of the icon for slot {@code k}, or -1 when no icon band is shown. */
+	int iconCenterX(int k)
 	{
 		if (!showIcons)
 		{
 			return -1;
 		}
+		if (vertical)
+		{
+			// Icon column to the LEFT (ABOVE) or RIGHT (BELOW) of the glyph column.
+			return iconPosition == IconPosition.ABOVE
+				? MARGIN_PX + iconBandPx / 2
+				: MARGIN_PX + cellSize + iconBandPx / 2;
+		}
+		// Horizontal: icons align with their tick column.
+		return cellCenterX(k);
+	}
+
+	/** Y center of the icon for slot {@code k}, or -1 when no icon band is shown. */
+	int iconCenterY(int k)
+	{
+		if (!showIcons)
+		{
+			return -1;
+		}
+		if (vertical)
+		{
+			// Icons share the glyph row's Y in vertical mode.
+			return cellCenterY(k);
+		}
+		// Horizontal: icon row sits ABOVE or BELOW the glyph row.
 		return iconPosition == IconPosition.ABOVE
 			? MARGIN_PX + iconBandPx / 2
 			: MARGIN_PX + cellSize + iconBandPx / 2;
