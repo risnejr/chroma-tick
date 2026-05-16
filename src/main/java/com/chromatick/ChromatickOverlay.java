@@ -113,7 +113,6 @@ public class ChromatickOverlay extends Overlay
 		removeActor(graphics, player, localZ);
 	}
 
-	@SuppressWarnings("deprecation")
 	private void removeActor(final Graphics2D graphics, final Actor actor, final int localZ)
 	{
 		final int clipX1 = client.getViewportXOffset();
@@ -134,9 +133,8 @@ public class ChromatickOverlay extends Overlay
 		final int[] y2d = new int[vCount];
 
 		final LocalPoint lp = actor.getLocalLocation();
-		// modelToCanvas(Client,...) is deprecated but no WorldView overload exists yet
 		Perspective.modelToCanvas(
-			client, vCount,
+			client, client.getTopLevelWorldView(), vCount,
 			lp.getX(), lp.getY(), localZ,
 			actor.getCurrentOrientation(),
 			x3d, z3d, y3d,
