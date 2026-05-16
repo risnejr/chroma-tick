@@ -125,6 +125,13 @@ class ChromatickPanel extends PluginPanel
 	private final JSlider    hudXOffsetSlider;
 	private final JLabel     hudXOffsetValueLabel;
 
+	// Recorder
+	private final PillToggle recordModeToggle;
+	private final PillToggle recordIconPositionToggle;
+	private final JSlider    recordArmTicksSlider;
+	private final JLabel     recordArmTicksValueLabel;
+	private final RecordModeDot recordModeDot;
+
 	private int  selectedCycle;
 	private Slot editing;
 
@@ -554,6 +561,52 @@ class ChromatickPanel extends PluginPanel
 			hudBoldBox.setEnabled(glyph == HudGlyph.NUMBERS);
 		});
 
+		hudBody.add(Box.createVerticalStrut(8));
+
+		// ── Recorder subgroup ─────────────────────────────────────────────
+		hudBody.add(subgroupLabelRow("Recorder"));
+		hudBody.add(Box.createVerticalStrut(2));
+
+		// Mode pill — Off / Arm / Always — with a colored status dot mirroring
+		// the on-HUD indicator so users can see what the dot color means.
+		recordModeToggle = new PillToggle(new String[]{"Off", "Arm", "Always"});
+		recordModeToggle.setPillTooltips(new String[]{
+			"Recorder off",
+			"Capture once on your next move",
+			"Capture every tick"});
+		recordModeToggle.addListener(idx -> {
+			RecordMode mode = RecordMode.values()[idx];
+			plugin.setRecordMode(mode);
+			recordModeDot.setMode(mode);
+			recordArmTicksSlider.setEnabled(mode == RecordMode.ARM);
+			recordArmTicksValueLabel.setEnabled(mode == RecordMode.ARM);
+		});
+		recordModeDot = new RecordModeDot();
+		hudBody.add(modeRowWithDot("Mode", recordModeToggle, recordModeDot));
+
+		// Icon position — Above / Below the glyph row.
+		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
+		recordIconPositionToggle.setPillTooltips(new String[]{
+			"Icons render above the row",
+			"Icons render below the row"});
+		recordIconPositionToggle.addListener(idx ->
+			plugin.setRecordIconPosition(IconPosition.values()[idx]));
+		hudBody.add(labeledToggleRow("Icons", recordIconPositionToggle));
+
+		// Arm length — total ticks captured per ARM trigger. 1 = the movement
+		// tick alone; 2 = movement tick + 1 more; etc.
+		recordArmTicksSlider     = themedSlider(1, 10);
+		recordArmTicksValueLabel = compactValueLabel();
+		recordArmTicksSlider.addChangeListener(e -> {
+			int v = recordArmTicksSlider.getValue();
+			recordArmTicksValueLabel.setText(valueFmt(v, "t"));
+			plugin.setRecordArmTicks(v);
+		});
+		addResetGesture(recordArmTicksSlider, 1);
+		recordArmTicksSlider.setToolTipText(
+			"Ticks captured per ARM trigger (movement tick + N-1 more). Right-click to reset.");
+		hudBody.add(labeledSliderRow("Arm length", recordArmTicksSlider, recordArmTicksValueLabel));
+
 		hudSection.add(hudBody);
 		content.add(hudSection);
 
@@ -590,6 +643,13 @@ class ChromatickPanel extends PluginPanel
 		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
 		hudBoldBox.setSelected(cfg.hudBold());
 		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
+
+		recordModeToggle.setSelected(cfg.recordMode().ordinal());
+		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
+		recordModeDot.setMode(cfg.recordMode());
+		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel, cfg.recordArmTicks(), "t");
+		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
+		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
 
 		selectedCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
 		applyModeVisibility(cfg.staticMode());
@@ -731,6 +791,13 @@ class ChromatickPanel extends PluginPanel
 		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
 		hudBoldBox.setSelected(cfg.hudBold());
 		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
+
+		recordModeToggle.setSelected(cfg.recordMode().ordinal());
+		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
+		recordModeDot.setMode(cfg.recordMode());
+		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel, cfg.recordArmTicks(), "t");
+		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
+		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
 	}
 
 	void onPaletteChanged(int cycleN)
@@ -1045,6 +1112,14 @@ class ChromatickPanel extends PluginPanel
 		l.setPreferredSize(new Dimension(92, 16));
 		row.add(l,      BorderLayout.WEST);
 		row.add(toggle, BorderLayout.CENTER);
+		return row;
+	}
+
+	/** Toggle row with a colored status dot anchored on the right. */
+	private JPanel modeRowWithDot(String text, PillToggle toggle, RecordModeDot dot)
+	{
+		JPanel row = labeledToggleRow(text, toggle);
+		row.add(dot, BorderLayout.EAST);
 		return row;
 	}
 
@@ -1808,6 +1883,55 @@ class ChromatickPanel extends PluginPanel
 				}
 				return preferred ? super.preferredLayoutSize(parent) : super.minimumLayoutSize(parent);
 			}
+		}
+	}
+
+	/**
+	 * Small filled circle used in the Recorder row to mirror the on-HUD
+	 * status dot — amber for ARM, red for ALWAYS, dim grey for OFF. Lets
+	 * the user see at a glance what state they're configuring.
+	 */
+	private static final class RecordModeDot extends JComponent
+	{
+		private static final Color ARM_COLOR    = new Color(255, 180, 30);
+		private static final Color ALWAYS_COLOR = new Color(220, 50,  50);
+		private static final Color OFF_COLOR    = new Color(0x44, 0x44, 0x44);
+
+		private RecordMode mode = RecordMode.OFF;
+
+		RecordModeDot()
+		{
+			Dimension d = new Dimension(14, 14);
+			setPreferredSize(d);
+			setMinimumSize(d);
+			setMaximumSize(d);
+			setOpaque(false);
+		}
+
+		void setMode(RecordMode m)
+		{
+			if (m != mode)
+			{
+				mode = m;
+				repaint();
+			}
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Color c;
+			switch (mode)
+			{
+				case ARM:    c = ARM_COLOR;    break;
+				case ALWAYS: c = ALWAYS_COLOR; break;
+				default:     c = OFF_COLOR;    break;
+			}
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(c);
+			g2.fillOval(2, 3, 9, 9);
+			g2.dispose();
 		}
 	}
 }

@@ -191,7 +191,7 @@ public interface ChromatickConfig extends Config
 	@ConfigItem(keyName = "recordArmTicks", name = "", description = "", hidden = true)
 	default int recordArmTicks()
 	{
-		return 2;
+		return 1;
 	}
 
 	// ─── Hotkeys ──────────────────────────────────────────────────────────
