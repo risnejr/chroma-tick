@@ -67,3 +67,26 @@ enum RecordMode
 		return values[(ordinal() + 1) % values.length];
 	}
 }
+
+/**
+ * What kind of player action a {@link TickActionEvent} represents. The
+ * recorder filters captured events by the user's selected categories;
+ * the icon resolver maps each category to its sprite(s).
+ *
+ * <p>Declaration order is also default render priority when multiple
+ * categories fire on the same tick — earlier categories win when slot
+ * space is limited.
+ */
+enum TickActionCategory
+{
+	/** Active Protect-from-X prayer this tick. */
+	PROTECTION_PRAYER,
+	/** Attack-type menu click (red on RuneScape's UI). */
+	RED_CLICK,
+	/** Non-attack, non-walk menu click (yellow on RuneScape's UI). */
+	YELLOW_CLICK,
+	/** Use-item-on-X click. Carries source + target item IDs. */
+	ITEM_USE,
+	/** Player tile changed between ticks. */
+	MOVEMENT
+}
