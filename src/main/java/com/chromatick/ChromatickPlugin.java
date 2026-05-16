@@ -148,6 +148,14 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			// ARM auto-exited to OFF; persist so the panel + config reflect it.
 			configManager.setConfiguration("chromatick", "recordMode", afterMode);
 		}
+
+		// Drain the HUD overlay's drag signal. render() may have detected an
+		// alt-drag and flagged it; flipping the persisted anchor target lives
+		// here so render stays free of state mutation.
+		if (hudOverlay.consumeUserDragged())
+		{
+			setHudAnchorTarget(HudAnchorTarget.NONE);
+		}
 	}
 
 	private Set<Prayer> activeProtectPrayers()

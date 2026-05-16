@@ -51,6 +51,14 @@ public class ChromatickHudOverlay extends Overlay
 	private int lastCanvasH = -1;
 
 	/**
+	 * Signal that render() detected an alt-drag. The plugin drains this flag
+	 * on its next game tick and flips the anchor target to NONE. Volatile
+	 * because clearDragState() may run on the Swing EDT (panel callbacks)
+	 * while render runs on the client thread.
+	 */
+	private volatile boolean userDragged = false;
+
+	/**
 	 * Lazy-loaded prayer sprite cache. Fields are volatile so the render
 	 * thread sees the SpriteManager callback's write without explicit
 	 * synchronisation; null until the async load completes.
@@ -98,16 +106,17 @@ public class ChromatickHudOverlay extends Overlay
 
 		// Drag detection: if we *think* we're anchored but the framework's
 		// preferred location no longer matches what we last set, the user must
-		// have alt-dragged the overlay. Flip the target to NONE — preserves
-		// the dragged position by virtue of not re-positioning each frame.
+		// have alt-dragged the overlay. Set userDragged so subsequent frames
+		// stop re-anchoring; the plugin observes the flag on its next game
+		// tick and flips the persisted anchor target to NONE.
 		HudAnchorTarget anchorTarget = config.hudAnchorTarget();
-		boolean anchored = anchorTarget != HudAnchorTarget.NONE;
+		boolean anchored = anchorTarget != HudAnchorTarget.NONE && !userDragged;
 		if (anchored && !canvasResized && lastSetLocation != null)
 		{
 			Point current = getPreferredLocation();
 			if (current != null && !current.equals(lastSetLocation))
 			{
-				plugin.setHudAnchorTarget(HudAnchorTarget.NONE);
+				userDragged = true;
 				lastSetLocation = null;
 				anchored = false;
 			}
@@ -208,11 +217,28 @@ public class ChromatickHudOverlay extends Overlay
 
 	/**
 	 * Clear the drag-tracking state so the next render() re-anchors cleanly.
-	 * Called from the plugin's setHudAnchorTarget after switching off NONE.
+	 * Called from the plugin's setHudAnchorTarget after switching off NONE,
+	 * and on plugin startUp when re-adding the overlay.
 	 */
 	void clearDragState()
 	{
 		lastSetLocation = null;
+		userDragged = false;
+	}
+
+	/**
+	 * Read-and-clear: returns {@code true} once for each render-detected drag,
+	 * then resets the flag. The plugin calls this on each game tick so the
+	 * persisted anchor target can flip to NONE without render mutating state.
+	 */
+	boolean consumeUserDragged()
+	{
+		if (userDragged)
+		{
+			userDragged = false;
+			return true;
+		}
+		return false;
 	}
 
 	/** Player's feet at ground level in canvas pixel space, or null if unavailable. */
