@@ -32,10 +32,6 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 @SuppressWarnings("deprecation")
 public class ChromatickHudOverlay extends Overlay
 {
-	private static final int BASE_GLYPH_PX = 10;
-	// 1px margin around the row to leave room for the drop shadow.
-	private static final int MARGIN_PX     = 2;
-
 	private final ChromatickPlugin plugin;
 	private final ChromatickConfig config;
 	private final Client client;
@@ -101,26 +97,14 @@ public class ChromatickHudOverlay extends Overlay
 		final Color[] palette = resolvePalette(cycleLength);
 		final boolean cycleInPlace = config.hudCycleInPlace();
 
-		final int configScalePct = clamp(config.hudScale(), 50, 400);
-		final float scale        = configScalePct / 100f;
-		final float popFactor    = 1f + clamp(config.hudPop(), 0, 200) / 100f;
-		final float baseGlyphF   = BASE_GLYPH_PX * scale;
-		final int   baseGlyph    = Math.max(6, Math.round(baseGlyphF));
-		final int   cellSize     = Math.max(baseGlyph, Math.round(baseGlyphF * popFactor));
-		// Spacing may be negative (overlap). Floor the main-axis length so the
-		// overlay can't shrink to nothing. Spacing/direction are irrelevant in
-		// cycle-in-place mode (only one glyph renders), but we still compute
-		// them harmlessly.
-		final int   gap          = Math.round(clamp(config.hudSpacing(), -10, 10) * scale);
-		final boolean vertical   = config.hudVertical();
-
-		// In cycle-in-place mode we render a single glyph that changes color
-		// (and number) each tick — same footprint regardless of cycle length.
-		final int slots = cycleInPlace ? 1 : cycleLength;
-		final int mainAxisLen = Math.max(cellSize, slots * cellSize + (slots - 1) * gap);
-		final int crossAxisLen = cellSize;
-		final int totalW = (vertical ? crossAxisLen : mainAxisLen) + 2 * MARGIN_PX;
-		final int totalH = (vertical ? mainAxisLen : crossAxisLen) + 2 * MARGIN_PX;
+		final HudLayout layout = HudLayout.compute(
+			config.hudScale(),
+			config.hudPop(),
+			config.hudSpacing(),
+			cycleLength,
+			config.hudVertical(),
+			cycleInPlace
+		);
 
 		// While anchored, place the overlay so the bar's center sits at the
 		// configured offset from the player's head/feet. We always overwrite
@@ -135,8 +119,8 @@ public class ChromatickHudOverlay extends Overlay
 			{
 				int xOff = config.hudHorizontalOffset();
 				int yOff = config.hudVerticalOffset();
-				int x = base.x + xOff - totalW / 2;
-				int y = base.y + yOff - totalH / 2;
+				int x = base.x + xOff - layout.totalWidth / 2;
+				int y = base.y + yOff - layout.totalHeight / 2;
 				Point newLoc = new Point(x, y);
 				setPreferredLocation(newLoc);
 				lastSetLocation = newLoc;
@@ -148,7 +132,7 @@ public class ChromatickHudOverlay extends Overlay
 		final boolean useBold   = config.hudBold();
 		final String glyphType  = config.hudGlyph();
 
-		for (int k = 0; k < slots; k++)
+		for (int k = 0; k < layout.slots; k++)
 		{
 			// In cycle-in-place mode the single slot always shows the current
 			// tick's palette entry and counts as "active". In row mode, slot k
@@ -159,14 +143,9 @@ public class ChromatickHudOverlay extends Overlay
 			final Color base      = palette[paletteSlot % palette.length];
 			final Color glyphCol  = new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha);
 
-			final int cellOffset = k * (cellSize + gap);
-			final int cellX = MARGIN_PX + (vertical ? 0          : cellOffset);
-			final int cellY = MARGIN_PX + (vertical ? cellOffset : 0         );
-			final int cx    = cellX + cellSize / 2;
-			final int cy    = cellY + cellSize / 2;
-
-			// Active fills (cellSize - 2) so it doesn't kiss the cell boundary; inactive sits at baseGlyph.
-			final int glyphSize = active ? Math.max(baseGlyph, cellSize - 2) : baseGlyph;
+			final int cx = layout.cellCenterX(k);
+			final int cy = layout.cellCenterY(k);
+			final int glyphSize = layout.glyphSize(active);
 
 			if ("numbers".equals(glyphType))
 			{
@@ -178,7 +157,7 @@ public class ChromatickHudOverlay extends Overlay
 			}
 		}
 
-		return new Dimension(totalW, totalH);
+		return new Dimension(layout.totalWidth, layout.totalHeight);
 	}
 
 	/**
