@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import java.awt.Color;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;

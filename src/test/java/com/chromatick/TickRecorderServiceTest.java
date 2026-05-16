@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;

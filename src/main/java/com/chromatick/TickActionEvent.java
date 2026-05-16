@@ -1,5 +1,7 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
+
 /**
  * One categorized player action captured at a single game tick. Immutable
  * value type — the recorder stores these in its per-tick buffer and the

@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.KeyEvent;

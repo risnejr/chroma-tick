@@ -1,5 +1,7 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
+
 /**
  * Pure layout math for the HUD metronome bar. Computes cell/glyph sizing,
  * spacing and bounding dimensions from raw config inputs so the geometry

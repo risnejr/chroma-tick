@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import java.awt.Canvas;
 import java.awt.Color;
 import java.awt.Dimension;

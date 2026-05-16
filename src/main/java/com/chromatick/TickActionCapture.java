@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
