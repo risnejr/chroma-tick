@@ -115,6 +115,16 @@ public class ChromatickOverlay extends Overlay
 
 	private void removeActor(final Graphics2D graphics, final Actor actor, final int localZ)
 	{
+		// Either of these can be null transiently — model during animation/region
+		// transitions, local location when the actor is off-scene. Bail before
+		// dereferencing, otherwise the overlay NPEs in render.
+		final Model model = actor.getModel();
+		final LocalPoint lp = actor.getLocalLocation();
+		if (model == null || lp == null)
+		{
+			return;
+		}
+
 		final int clipX1 = client.getViewportXOffset();
 		final int clipY1 = client.getViewportYOffset();
 		final int clipX2 = client.getViewportWidth() + clipX1;
@@ -123,7 +133,6 @@ public class ChromatickOverlay extends Overlay
 		final Object origAA = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
 
-		final Model model = actor.getModel();
 		final int vCount = model.getVerticesCount();
 		final float[] x3d = model.getVerticesX();
 		final float[] y3d = model.getVerticesY();
@@ -132,7 +141,6 @@ public class ChromatickOverlay extends Overlay
 		final int[] x2d = new int[vCount];
 		final int[] y2d = new int[vCount];
 
-		final LocalPoint lp = actor.getLocalLocation();
 		Perspective.modelToCanvas(
 			client, client.getTopLevelWorldView(), vCount,
 			lp.getX(), lp.getY(), localZ,
