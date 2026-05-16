@@ -569,7 +569,7 @@ class ChromatickPanel extends PluginPanel
 		// — Java's definite-assignment rule rejects forward references through
 		// final fields captured by a lambda.
 		recordModeDot            = new RecordModeDot();
-		recordModeToggle         = new PillToggle(new String[]{"Off", "Arm", "Always"});
+		recordModeToggle         = new PillToggle(new String[]{"Off", "One", "All"});
 		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
 		recordArmTicksSlider     = themedSlider(1, 10);
 		recordArmTicksValueLabel = compactValueLabel();
