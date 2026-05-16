@@ -384,8 +384,8 @@ public class ChromatickHudOverlay extends Overlay
 			return;
 		}
 		int size = layout.iconSize();
-		int cx = layout.cellCenterX(k);
-		int cy = layout.iconCenterY();
+		int cx = layout.iconCenterX(k);
+		int cy = layout.iconCenterY(k);
 		g.drawImage(sprite, cx - size / 2, cy - size / 2, size, size, null);
 	}
 
