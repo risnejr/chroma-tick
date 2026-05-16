@@ -4,7 +4,9 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.Client;
 import net.runelite.api.Prayer;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.gameval.SpriteID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
@@ -28,17 +30,24 @@ import net.runelite.client.game.SpriteManager;
 @Singleton
 class RecordedIconResolver
 {
-	// Cursor colors for primitive click icons. Roughly match OSRS's actual
-	// red/yellow hover cursors — tuned slightly toward bright/saturated so
-	// the dots remain legible at small HUD sizes.
-	private static final Color RED_CLICK_COLOR    = new Color(0xE8, 0x35, 0x35);
-	private static final Color YELLOW_CLICK_COLOR = new Color(0xF5, 0xC5, 0x2A);
+	// Cursor colors used when the live cross sprites aren't loaded yet
+	// (early frames before Client.getCrossSprites() returns a populated
+	// array). Tuned bright so the fallback dots stay legible.
+	private static final Color RED_CLICK_FALLBACK    = new Color(0xE8, 0x35, 0x35);
+	private static final Color YELLOW_CLICK_FALLBACK = new Color(0xF5, 0xC5, 0x2A);
 
 	// Fallback color for ITEM_USE when the source-item lookup fails (no
 	// selected widget, no item ID, etc.). A muted cyan — distinct from
 	// red/yellow without clashing.
 	private static final Color ITEM_USE_FALLBACK = new Color(0x40, 0xC8, 0xA0);
 
+	// Indices into Client.getCrossSprites(). OSRS exposes 8 frames total —
+	// frames 0-3 are the yellow click animation, frames 4-7 are red.
+	// Pick mid-animation (largest X) for the HUD's static glyph.
+	private static final int YELLOW_CROSS_INDEX = 2;
+	private static final int RED_CROSS_INDEX    = 6;
+
+	private final Client client;
 	private final SpriteManager spriteManager;
 	private final ItemManager itemManager;
 
@@ -47,9 +56,15 @@ class RecordedIconResolver
 	private volatile BufferedImage spriteMagic;
 	private boolean requested = false;
 
+	// Cross-sprite cache. Populated lazily on first render that needs them
+	// — the array isn't always available at plugin startUp.
+	private volatile BufferedImage crossYellow;
+	private volatile BufferedImage crossRed;
+
 	@Inject
-	RecordedIconResolver(SpriteManager spriteManager, ItemManager itemManager)
+	RecordedIconResolver(Client client, SpriteManager spriteManager, ItemManager itemManager)
 	{
+		this.client = client;
 		this.spriteManager = spriteManager;
 		this.itemManager = itemManager;
 	}
@@ -105,12 +120,55 @@ class RecordedIconResolver
 			case ITEM_USE:
 				return itemUseIcon(event);
 			case RED_CLICK:
-				return RecordedIcon.dot(RED_CLICK_COLOR);
+				return crossIcon(true);
 			case YELLOW_CLICK:
-				return RecordedIcon.dot(YELLOW_CLICK_COLOR);
+				return crossIcon(false);
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * Return the cached cross sprite (yellow or red). Pulls from
+	 * {@link Client#getCrossSprites()} on first call and converts the
+	 * native {@link SpritePixels} to a {@link BufferedImage}; cached for
+	 * the remainder of the session. Falls back to a colored dot if the
+	 * sprite array isn't populated yet — the client doesn't always have
+	 * it ready immediately at plugin startup.
+	 */
+	private RecordedIcon crossIcon(boolean red)
+	{
+		BufferedImage cached = red ? crossRed : crossYellow;
+		if (cached == null)
+		{
+			cached = loadCrossSprite(red ? RED_CROSS_INDEX : YELLOW_CROSS_INDEX);
+			if (cached != null)
+			{
+				if (red)
+				{
+					crossRed = cached;
+				}
+				else
+				{
+					crossYellow = cached;
+				}
+			}
+		}
+		if (cached != null)
+		{
+			return RecordedIcon.sprite(cached);
+		}
+		return RecordedIcon.dot(red ? RED_CLICK_FALLBACK : YELLOW_CLICK_FALLBACK);
+	}
+
+	private BufferedImage loadCrossSprite(int index)
+	{
+		SpritePixels[] sprites = client.getCrossSprites();
+		if (sprites == null || index < 0 || index >= sprites.length || sprites[index] == null)
+		{
+			return null;
+		}
+		return sprites[index].toBufferedImage();
 	}
 
 	/**
