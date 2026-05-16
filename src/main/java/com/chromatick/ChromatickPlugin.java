@@ -17,6 +17,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.Keybind;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.KeyListener;
@@ -58,6 +59,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private TickRecorderService recorder;
 
 	@Inject
+	private TickActionCapture capture;
+
+	@Inject
+	private EventBus eventBus;
+
+	@Inject
 	private ChromatickRuntimeState state;
 
 	@Inject
@@ -93,6 +100,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		configMigrator.migrate();
 		applyDisplayMode();
 		keyManager.registerKeyListener(this);
+		eventBus.register(capture);
 		state.reset();
 		recorder.setMode(config.recordMode());
 		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
@@ -113,6 +121,8 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		overlayManager.remove(tileOverlay);
 		overlayManager.remove(hudOverlay);
 		keyManager.unregisterKeyListener(this);
+		eventBus.unregister(capture);
+		capture.reset();
 		if (navButton != null)
 		{
 			clientToolbar.removeNavigation(navButton);
@@ -180,11 +190,13 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	 * make it into the buffer, so the recorder's storage and the HUD
 	 * timeline stay tight.
 	 *
-	 * <p>Currently only PROTECTION_PRAYER events are emitted; click and
-	 * item-use events land in the next commits and add their own branches.
+	 * <p>The captured click (if any) is always drained from the capture
+	 * service so the buffer doesn't carry stale state into the next tick,
+	 * even when the click's category isn't enabled.
 	 */
 	private List<TickActionEvent> buildTickEvents()
 	{
+		TickActionEvent click = capture.drainClick();
 		Set<TickActionCategory> enabled = enabledRecordCategories();
 		if (enabled.isEmpty())
 		{
@@ -197,6 +209,10 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			{
 				events.add(TickActionEvent.of(TickActionCategory.PROTECTION_PRAYER, p.ordinal()));
 			}
+		}
+		if (click != null && enabled.contains(click.category()))
+		{
+			events.add(click);
 		}
 		return events;
 	}

@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -26,6 +27,12 @@ import net.runelite.client.game.SpriteManager;
 @Singleton
 class RecordedIconResolver
 {
+	// Cursor colors for primitive click icons. Roughly match OSRS's actual
+	// red/yellow hover cursors — tuned slightly toward bright/saturated so
+	// the dots remain legible at small HUD sizes.
+	private static final Color RED_CLICK_COLOR    = new Color(0xE8, 0x35, 0x35);
+	private static final Color YELLOW_CLICK_COLOR = new Color(0xF5, 0xC5, 0x2A);
+
 	private final SpriteManager spriteManager;
 
 	private volatile BufferedImage spriteMelee;
@@ -57,15 +64,13 @@ class RecordedIconResolver
 	}
 
 	/**
-	 * Resolve the sprite to render for a recorded tick. Walks the event
-	 * list in declaration order and returns the first event whose category
-	 * yields a loaded sprite. Returns {@code null} when nothing was
-	 * recorded or no matching sprite has loaded yet.
-	 *
-	 * <p>Today only PROTECTION_PRAYER is handled — the other categories
-	 * land in their feature commits, each contributing a branch here.
+	 * Resolve the icon to render for a recorded tick. Walks the event
+	 * list in declaration order and returns the first event that resolves
+	 * to a renderable icon (either a loaded sprite or a primitive dot).
+	 * Returns {@code null} when nothing was recorded or no event yet has
+	 * a renderable icon (e.g. sprite still loading).
 	 */
-	BufferedImage spriteFor(RecordedTick recorded)
+	RecordedIcon iconFor(RecordedTick recorded)
 	{
 		if (recorded.isEmpty())
 		{
@@ -73,21 +78,26 @@ class RecordedIconResolver
 		}
 		for (TickActionEvent event : recorded.actions())
 		{
-			BufferedImage sprite = spriteFor(event);
-			if (sprite != null)
+			RecordedIcon icon = iconFor(event);
+			if (icon != null)
 			{
-				return sprite;
+				return icon;
 			}
 		}
 		return null;
 	}
 
-	private BufferedImage spriteFor(TickActionEvent event)
+	private RecordedIcon iconFor(TickActionEvent event)
 	{
 		switch (event.category())
 		{
 			case PROTECTION_PRAYER:
-				return prayerSprite(event.primaryId());
+				BufferedImage sprite = prayerSprite(event.primaryId());
+				return sprite == null ? null : RecordedIcon.sprite(sprite);
+			case RED_CLICK:
+				return RecordedIcon.dot(RED_CLICK_COLOR);
+			case YELLOW_CLICK:
+				return RecordedIcon.dot(YELLOW_CLICK_COLOR);
 			default:
 				return null;
 		}

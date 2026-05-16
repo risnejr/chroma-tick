@@ -8,7 +8,6 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
@@ -364,20 +363,32 @@ public class ChromatickHudOverlay extends Overlay
 
 	/**
 	 * Render the recorded icon (if any) for tick slot {@code k}. Sprite
-	 * resolution lives in {@link RecordedIconResolver}; the overlay just
-	 * asks for "what to draw at this tick" and places it.
+	 * vs primitive-dot is decided in {@link RecordedIconResolver}; the
+	 * overlay just draws what it gets.
 	 */
 	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
 	{
-		BufferedImage sprite = iconResolver.spriteFor(recorder.getRecordedAt(k));
-		if (sprite == null)
+		RecordedIcon icon = iconResolver.iconFor(recorder.getRecordedAt(k));
+		if (icon == null)
 		{
 			return;
 		}
 		int size = layout.glyphSize(false);
 		int cx = layout.iconCenterX(k);
 		int cy = layout.iconCenterY(k);
-		g.drawImage(sprite, cx - size / 2, cy - size / 2, size, size, null);
+		if (icon.sprite != null)
+		{
+			g.drawImage(icon.sprite, cx - size / 2, cy - size / 2, size, size, null);
+		}
+		else
+		{
+			// Primitive dot — antialiased filled oval at the icon slot.
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(icon.primitiveColor);
+			g2.fillOval(cx - size / 2, cy - size / 2, size, size);
+			g2.dispose();
+		}
 	}
 
 	private void renderModeIndicator(Graphics2D g, RecordMode mode)
