@@ -1,6 +1,5 @@
 package com.chromatick;
 
-import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -119,17 +118,20 @@ class TickRecorderService
 		}
 	}
 
-	/** True if the buffer holds at least one tick's worth of recorded prayers. */
+	/** True if the buffer holds at least one tick's worth of recorded payload. */
 	boolean hasCaptures()
 	{
 		return !store.isEmpty();
 	}
 
-	/** Prayers captured at this tick-in-cycle, or an empty set if none. */
-	Set<Prayer> getPrayersAtTick(int tickIndex)
+	/**
+	 * Recorded payload at this tick-in-cycle, or {@link RecordedTick#EMPTY}
+	 * if nothing was captured at that slot.
+	 */
+	RecordedTick getRecordedAt(int tickIndex)
 	{
 		EnumSet<Prayer> captured = store.get(tickIndex);
-		return captured != null ? Collections.unmodifiableSet(captured) : Collections.emptySet();
+		return RecordedTick.ofPrayers(captured);
 	}
 
 	/** Forget everything. Called on entering OFF, on shutdown, and on demand. */

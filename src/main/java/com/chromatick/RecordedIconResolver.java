@@ -1,7 +1,6 @@
 package com.chromatick;
 
 import java.awt.image.BufferedImage;
-import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Prayer;
@@ -58,20 +57,19 @@ class RecordedIconResolver
 	}
 
 	/**
-	 * Resolve the sprite to render for a set of recorded prayers at one
-	 * tick slot. Only one Protect-from-X prayer can be active at a time in
-	 * OSRS, so we return the first one we find whose sprite has loaded —
-	 * which is also the first by enum order if all three load before
-	 * anything renders. Returns {@code null} when the set is empty or no
-	 * matching sprite has loaded yet.
+	 * Resolve the sprite to render for a recorded tick. Only one
+	 * Protect-from-X prayer can be active at a time in OSRS, so we return
+	 * the first prayer in the captured set whose sprite has loaded.
+	 * Returns {@code null} when nothing was recorded or no matching sprite
+	 * has loaded yet.
 	 */
-	BufferedImage spriteFor(Set<Prayer> recorded)
+	BufferedImage spriteFor(RecordedTick recorded)
 	{
 		if (recorded.isEmpty())
 		{
 			return null;
 		}
-		for (Prayer p : recorded)
+		for (Prayer p : recorded.prayers())
 		{
 			BufferedImage sprite = spriteFor(p);
 			if (sprite != null)

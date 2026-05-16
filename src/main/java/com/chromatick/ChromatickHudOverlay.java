@@ -369,7 +369,7 @@ public class ChromatickHudOverlay extends Overlay
 	 */
 	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
 	{
-		BufferedImage sprite = iconResolver.spriteFor(recorder.getPrayersAtTick(k));
+		BufferedImage sprite = iconResolver.spriteFor(recorder.getRecordedAt(k));
 		if (sprite == null)
 		{
 			return;

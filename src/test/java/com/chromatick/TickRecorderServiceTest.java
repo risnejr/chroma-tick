@@ -29,6 +29,12 @@ public class TickRecorderServiceTest
 		recorder = new TickRecorderService();
 	}
 
+	/** Convenience accessor for assertions that pre-date the RecordedTick wrapper. */
+	private Set<Prayer> prayersAt(int tickIndex)
+	{
+		return recorder.getRecordedAt(tickIndex).prayers();
+	}
+
 	// ─── Initial state ──────────────────────────────────────────────────
 
 	@Test
@@ -40,8 +46,8 @@ public class TickRecorderServiceTest
 	@Test
 	public void emptyBufferReturnsEmptySetPerTick()
 	{
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
-		assertTrue(recorder.getPrayersAtTick(5).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
+		assertTrue(prayersAt(5).isEmpty());
 	}
 
 	// ─── Mode cycling ───────────────────────────────────────────────────
@@ -62,8 +68,8 @@ public class TickRecorderServiceTest
 	{
 		recorder.onTick(0, MELEE, true,  2);
 		recorder.onTick(1, MAGIC, false, 2);
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	@Test
@@ -73,10 +79,10 @@ public class TickRecorderServiceTest
 		// (or explicit clear()) wipes the buffer.
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(2, MELEE, false, 2);
-		assertEquals(MELEE, recorder.getPrayersAtTick(2));
+		assertEquals(MELEE, prayersAt(2));
 
 		recorder.setMode(RecordMode.OFF);
-		assertEquals(MELEE, recorder.getPrayersAtTick(2));
+		assertEquals(MELEE, prayersAt(2));
 	}
 
 	// ─── ALWAYS mode ────────────────────────────────────────────────────
@@ -89,9 +95,9 @@ public class TickRecorderServiceTest
 		recorder.onTick(1, MAGIC,   true,  2);
 		recorder.onTick(2, MISSILE, false, 2);
 
-		assertEquals(MELEE,   recorder.getPrayersAtTick(0));
-		assertEquals(MAGIC,   recorder.getPrayersAtTick(1));
-		assertEquals(MISSILE, recorder.getPrayersAtTick(2));
+		assertEquals(MELEE,   prayersAt(0));
+		assertEquals(MAGIC,   prayersAt(1));
+		assertEquals(MISSILE, prayersAt(2));
 	}
 
 	@Test
@@ -99,11 +105,11 @@ public class TickRecorderServiceTest
 	{
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(0, MELEE, false, 2);
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 
 		// Cycle wraps; tick 0 hits again with a different prayer.
 		recorder.onTick(0, MAGIC, false, 2);
-		assertEquals(MAGIC, recorder.getPrayersAtTick(0));
+		assertEquals(MAGIC, prayersAt(0));
 	}
 
 	@Test
@@ -113,7 +119,7 @@ public class TickRecorderServiceTest
 		recorder.onTick(0, NONE, false, 2);
 		// Still captured (so renderer can tell "we were here, nothing active"
 		// apart from "we never recorded this tick").
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
 	}
 
 	// ─── ARM mode ───────────────────────────────────────────────────────
@@ -124,8 +130,8 @@ public class TickRecorderServiceTest
 		recorder.setMode(RecordMode.ARM);
 		recorder.onTick(0, MELEE, false, 2);
 		recorder.onTick(1, MAGIC, false, 2);
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	@Test
@@ -138,10 +144,10 @@ public class TickRecorderServiceTest
 		recorder.onTick(2, MAGIC,   false, 2);
 		recorder.onTick(3, MISSILE, false, 2);
 
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
-		assertEquals(MELEE, recorder.getPrayersAtTick(1));
-		assertEquals(MAGIC, recorder.getPrayersAtTick(2));
-		assertTrue(recorder.getPrayersAtTick(3).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
+		assertEquals(MELEE, prayersAt(1));
+		assertEquals(MAGIC, prayersAt(2));
+		assertTrue(prayersAt(3).isEmpty());
 	}
 
 	@Test
@@ -151,8 +157,8 @@ public class TickRecorderServiceTest
 		recorder.onTick(0, MELEE, true,  1);
 		recorder.onTick(1, MAGIC, false, 1);
 
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertEquals(MELEE, prayersAt(0));
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	@Test
@@ -166,10 +172,10 @@ public class TickRecorderServiceTest
 		recorder.onTick(2, MISSILE, false, 2);
 		recorder.onTick(3, NONE,    false, 2);
 
-		assertEquals(MELEE,   recorder.getPrayersAtTick(0));
-		assertEquals(MAGIC,   recorder.getPrayersAtTick(1));
-		assertEquals(MISSILE, recorder.getPrayersAtTick(2));
-		assertTrue(recorder.getPrayersAtTick(3).isEmpty());
+		assertEquals(MELEE,   prayersAt(0));
+		assertEquals(MAGIC,   prayersAt(1));
+		assertEquals(MISSILE, prayersAt(2));
+		assertTrue(prayersAt(3).isEmpty());
 	}
 
 	@Test
@@ -180,8 +186,8 @@ public class TickRecorderServiceTest
 		recorder.onTick(0, MELEE, true, 0);
 		recorder.onTick(1, MAGIC, false, 0);
 
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertEquals(MELEE, prayersAt(0));
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	// ─── Multiple prayers in one tick ───────────────────────────────────
@@ -193,7 +199,7 @@ public class TickRecorderServiceTest
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(0, two, false, 2);
 
-		assertEquals(two, recorder.getPrayersAtTick(0));
+		assertEquals(two, prayersAt(0));
 	}
 
 	@Test
@@ -205,7 +211,7 @@ public class TickRecorderServiceTest
 		// Caller mutates after capture — our stored snapshot must not change.
 		mutable.add(Prayer.PROTECT_FROM_MAGIC);
 
-		assertEquals(EnumSet.of(Prayer.PROTECT_FROM_MELEE), recorder.getPrayersAtTick(0));
+		assertEquals(EnumSet.of(Prayer.PROTECT_FROM_MELEE), prayersAt(0));
 	}
 
 	@Test
@@ -213,7 +219,7 @@ public class TickRecorderServiceTest
 	{
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(0, MELEE, false, 2);
-		Set<Prayer> view = recorder.getPrayersAtTick(0);
+		Set<Prayer> view = prayersAt(0);
 		try
 		{
 			view.add(Prayer.PROTECT_FROM_MAGIC);
@@ -235,7 +241,7 @@ public class TickRecorderServiceTest
 		recorder.clear();
 
 		assertEquals(RecordMode.ALWAYS, recorder.getMode());
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
 	}
 
 	@Test
@@ -246,7 +252,7 @@ public class TickRecorderServiceTest
 		recorder.clear();
 		// After clear, ARM should be quiet again until next movement.
 		recorder.onTick(1, MAGIC, false, 5);
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	// ─── Mode transitions ───────────────────────────────────────────────
@@ -256,11 +262,11 @@ public class TickRecorderServiceTest
 	{
 		recorder.setMode(RecordMode.ARM);
 		recorder.onTick(0, MELEE, true, 1);
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 
 		recorder.setMode(RecordMode.ALWAYS);
 		// Old capture survives the transition.
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 	}
 
 	@Test
@@ -269,14 +275,14 @@ public class TickRecorderServiceTest
 		// Re-arming = fresh capture session, so any prior buffer is wiped.
 		recorder.setMode(RecordMode.ALWAYS);
 		recorder.onTick(0, MELEE, false, 2);
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 
 		recorder.setMode(RecordMode.ARM);
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
 
 		// And: nothing captured until movement.
 		recorder.onTick(1, MAGIC, false, 2);
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	@Test
@@ -288,10 +294,10 @@ public class TickRecorderServiceTest
 		recorder.onTick(0, MELEE, true, 1); // captures and auto-exits to OFF
 
 		assertEquals(RecordMode.OFF, recorder.getMode());
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 
 		recorder.setMode(RecordMode.ARM);
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
 	}
 
 	// ─── ARM auto-exit ──────────────────────────────────────────────────
@@ -314,7 +320,7 @@ public class TickRecorderServiceTest
 
 		assertEquals(RecordMode.OFF, recorder.getMode());
 		// Captured prayer remains visible after auto-exit.
-		assertEquals(MELEE, recorder.getPrayersAtTick(0));
+		assertEquals(MELEE, prayersAt(0));
 	}
 
 	@Test
@@ -324,7 +330,7 @@ public class TickRecorderServiceTest
 		recorder.onTick(0, MELEE, true, 1); // captures and auto-exits to OFF
 		// Movement after auto-exit must not re-arm (mode is OFF now).
 		recorder.onTick(1, MAGIC, true, 1);
-		assertTrue(recorder.getPrayersAtTick(1).isEmpty());
+		assertTrue(prayersAt(1).isEmpty());
 	}
 
 	// ─── hasCaptures ────────────────────────────────────────────────────
@@ -346,7 +352,7 @@ public class TickRecorderServiceTest
 	public void offModeWithMovementIsStillNoOp()
 	{
 		recorder.onTick(0, MELEE, true, 5);
-		assertTrue(recorder.getPrayersAtTick(0).isEmpty());
+		assertTrue(prayersAt(0).isEmpty());
 		assertFalse(recorder.getMode() != RecordMode.OFF);
 	}
 }
