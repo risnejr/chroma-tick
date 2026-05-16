@@ -8,11 +8,16 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
+import net.runelite.api.Prayer;
+import net.runelite.api.SpriteID;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
@@ -36,6 +41,8 @@ public class ChromatickHudOverlay extends Overlay
 	private final ChromatickConfig config;
 	private final Client client;
 	private final PaletteService palettes;
+	private final PrayerRecorderService recorder;
+	private final SpriteManager spriteManager;
 
 	/** The location we last set on the overlay ourselves; used to detect user drag. */
 	private Point lastSetLocation = null;
@@ -43,14 +50,27 @@ public class ChromatickHudOverlay extends Overlay
 	private int lastCanvasW = -1;
 	private int lastCanvasH = -1;
 
+	/**
+	 * Lazy-loaded prayer sprite cache. Fields are volatile so the render
+	 * thread sees the SpriteManager callback's write without explicit
+	 * synchronisation; null until the async load completes.
+	 */
+	private volatile BufferedImage spriteMelee;
+	private volatile BufferedImage spriteMissiles;
+	private volatile BufferedImage spriteMagic;
+	private boolean spritesRequested = false;
+
 	@Inject
-	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client, PaletteService palettes)
+	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client,
+		PaletteService palettes, PrayerRecorderService recorder, SpriteManager spriteManager)
 	{
 		super(plugin);
 		this.plugin = plugin;
 		this.config = config;
 		this.client = client;
 		this.palettes = palettes;
+		this.recorder = recorder;
+		this.spriteManager = spriteManager;
 		setPosition(OverlayPosition.DYNAMIC);
 		setMovable(true);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -96,6 +116,8 @@ public class ChromatickHudOverlay extends Overlay
 		final int currentTick = Math.floorMod(plugin.getTickIndex(), cycleLength);
 		final Color[] palette = resolvePalette(cycleLength);
 		final boolean cycleInPlace = config.hudCycleInPlace();
+		final RecordMode recordMode = recorder.getMode();
+		final boolean wantIcons = recordMode != RecordMode.OFF;
 
 		final HudLayout layout = HudLayout.compute(
 			config.hudScale(),
@@ -103,8 +125,15 @@ public class ChromatickHudOverlay extends Overlay
 			config.hudSpacing(),
 			cycleLength,
 			config.hudVertical(),
-			cycleInPlace
+			cycleInPlace,
+			wantIcons,
+			config.recordIconPosition()
 		);
+
+		if (layout.showIcons)
+		{
+			ensureSpritesRequested();
+		}
 
 		// While anchored, place the overlay so the bar's center sits at the
 		// configured offset from the player's head/feet. We always overwrite
@@ -155,6 +184,20 @@ public class ChromatickHudOverlay extends Overlay
 			{
 				renderDot(g, cx, cy, glyphSize, glyphCol);
 			}
+
+			// Recorded prayer icon for this tick (row mode only).
+			if (layout.showIcons)
+			{
+				renderRecordedIcon(g, layout, k);
+			}
+		}
+
+		// Minimal mode indicator — tiny colored dot at the top-left corner
+		// when the recorder isn't OFF. Sits inside the bounding box so the
+		// framework's drag-tracking sees it as part of the overlay.
+		if (recordMode != RecordMode.OFF)
+		{
+			renderModeIndicator(g, recordMode);
 		}
 
 		return new Dimension(layout.totalWidth, layout.totalHeight);
@@ -288,5 +331,80 @@ public class ChromatickHudOverlay extends Overlay
 	private static int clamp(int v, int lo, int hi)
 	{
 		return Math.max(lo, Math.min(hi, v));
+	}
+
+	// ─── Per-tick prayer recorder ───────────────────────────────────────
+
+	private void ensureSpritesRequested()
+	{
+		if (spritesRequested)
+		{
+			return;
+		}
+		spritesRequested = true;
+		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
+		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
+		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
+	}
+
+	private BufferedImage spriteFor(Prayer p)
+	{
+		switch (p)
+		{
+			case PROTECT_FROM_MELEE:    return spriteMelee;
+			case PROTECT_FROM_MISSILES: return spriteMissiles;
+			case PROTECT_FROM_MAGIC:    return spriteMagic;
+			default: return null;
+		}
+	}
+
+	/**
+	 * Render the recorded prayer icon (if any) for tick slot {@code k}.
+	 * Only one Protect-from-X prayer can be active at a time in OSRS, so
+	 * we render the first one we find in the captured set.
+	 */
+	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
+	{
+		Set<Prayer> recorded = recorder.getPrayersAtTick(k);
+		if (recorded.isEmpty())
+		{
+			return;
+		}
+		BufferedImage sprite = null;
+		for (Prayer p : recorded)
+		{
+			sprite = spriteFor(p);
+			if (sprite != null)
+			{
+				break;
+			}
+		}
+		if (sprite == null)
+		{
+			return;
+		}
+		int size = layout.iconSize();
+		int cx = layout.cellCenterX(k);
+		int cy = layout.iconCenterY();
+		g.drawImage(sprite, cx - size / 2, cy - size / 2, size, size, null);
+	}
+
+	private void renderModeIndicator(Graphics2D g, RecordMode mode)
+	{
+		Color dotColor;
+		switch (mode)
+		{
+			case ARM:    dotColor = new Color(255, 180, 30); break;  // amber
+			case ALWAYS: dotColor = new Color(220, 50,  50); break;  // red
+			default: return;
+		}
+		Graphics2D g2 = (Graphics2D) g.create();
+		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		// 4px dot inset 1px from the top-left of the bounding box.
+		g2.setColor(new Color(0, 0, 0, 160));
+		g2.fillOval(2, 2, 5, 5);
+		g2.setColor(dotColor);
+		g2.fillOval(2, 2, 4, 4);
+		g2.dispose();
 	}
 }
