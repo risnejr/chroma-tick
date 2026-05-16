@@ -193,7 +193,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			return;
 		}
 		if ("cycleLength".equals(key) || "staticMode".equals(key) || "displayMode".equals(key)
-			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key))
+			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key)
+			|| "recordMode".equals(key) || "recordIconPosition".equals(key)
+			|| "recordArmTicks".equals(key))
 		{
 			// Active state changed — panel mirrors active state. hudAnchorTarget is
 			// here so the panel pill toggle flips to "None" when the overlay
