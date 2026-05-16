@@ -67,9 +67,9 @@ public interface ChromatickConfig extends Config
 	}
 
 	@ConfigItem(keyName = "paletteMode", name = "", description = "", hidden = true)
-	default String paletteMode()
+	default PaletteMode paletteMode()
 	{
-		return "grid";
+		return PaletteMode.GRID;
 	}
 
 	@ConfigItem(keyName = "sequentialFill", name = "", description = "", hidden = true)
@@ -80,18 +80,18 @@ public interface ChromatickConfig extends Config
 
 	// ─── HUD overlay (chatbubble metronome) ─────────────────────────────
 
-	/** "tile" · "hud" · "both" — where the tick visualization renders. */
+	/** Where the tick visualization renders. */
 	@ConfigItem(keyName = "displayMode", name = "", description = "", hidden = true)
-	default String displayMode()
+	default DisplayMode displayMode()
 	{
-		return "tile";
+		return DisplayMode.TILE;
 	}
 
-	/** "dots" · "numbers" — glyph style inside the HUD frame. */
+	/** Glyph style inside the HUD frame. */
 	@ConfigItem(keyName = "hudGlyph", name = "", description = "", hidden = true)
-	default String hudGlyph()
+	default HudGlyph hudGlyph()
 	{
-		return "dots";
+		return HudGlyph.DOTS;
 	}
 
 	/** 50–400, where 100 = native size. */
@@ -143,11 +143,11 @@ public interface ChromatickConfig extends Config
 		return false;
 	}
 
-	/** "head" · "feet" · "none" — where the HUD anchors to the player model. */
+	/** Where the HUD anchors to the player model. */
 	@ConfigItem(keyName = "hudAnchorTarget", name = "", description = "", hidden = true)
-	default String hudAnchorTarget()
+	default HudAnchorTarget hudAnchorTarget()
 	{
-		return "feet";
+		return HudAnchorTarget.FEET;
 	}
 
 	/** Vertical offset (canvas px) from the anchor point to the HUD bar's center. */

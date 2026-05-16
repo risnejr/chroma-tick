@@ -21,9 +21,9 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 /**
  * HUD metronome — a frameless row (or column) of palette-colored glyphs.
  *
- * Anchoring: target is "head", "feet", or "none". Head and feet auto-position
- * the bar each frame relative to the player (with X/Y offsets layered on top).
- * Alt+drag flips the target to "none" — the bar stays where the user dropped
+ * Anchoring: target is HEAD, FEET, or NONE. HEAD and FEET auto-position the
+ * bar each frame relative to the player (with X/Y offsets layered on top).
+ * Alt+drag flips the target to NONE — the bar stays where the user dropped
  * it. The panel pill toggle lets the user re-anchor explicitly.
  *
  * Static mode only freezes the *color* (all glyphs use the static color); the
@@ -78,16 +78,16 @@ public class ChromatickHudOverlay extends Overlay
 
 		// Drag detection: if we *think* we're anchored but the framework's
 		// preferred location no longer matches what we last set, the user must
-		// have alt-dragged the overlay. Flip the target to "none" — preserves
+		// have alt-dragged the overlay. Flip the target to NONE — preserves
 		// the dragged position by virtue of not re-positioning each frame.
-		String anchorTarget = config.hudAnchorTarget();
-		boolean anchored = !"none".equals(anchorTarget);
+		HudAnchorTarget anchorTarget = config.hudAnchorTarget();
+		boolean anchored = anchorTarget != HudAnchorTarget.NONE;
 		if (anchored && !canvasResized && lastSetLocation != null)
 		{
 			Point current = getPreferredLocation();
 			if (current != null && !current.equals(lastSetLocation))
 			{
-				plugin.setHudAnchorTarget("none");
+				plugin.setHudAnchorTarget(HudAnchorTarget.NONE);
 				lastSetLocation = null;
 				anchored = false;
 			}
@@ -112,7 +112,7 @@ public class ChromatickHudOverlay extends Overlay
 		// every frame (and re-positions correctly after window resizes).
 		if (anchored)
 		{
-			Point base = "head".equals(anchorTarget)
+			Point base = anchorTarget == HudAnchorTarget.HEAD
 				? computePlayerHeadCanvasPoint()
 				: computePlayerFeetCanvasPoint();
 			if (base != null)
@@ -130,7 +130,7 @@ public class ChromatickHudOverlay extends Overlay
 		final int activeAlpha   = pctToAlpha(config.hudActiveOpacity());
 		final int inactiveAlpha = pctToAlpha(config.hudInactiveOpacity());
 		final boolean useBold   = config.hudBold();
-		final String glyphType  = config.hudGlyph();
+		final HudGlyph glyphType = config.hudGlyph();
 
 		for (int k = 0; k < layout.slots; k++)
 		{
@@ -147,7 +147,7 @@ public class ChromatickHudOverlay extends Overlay
 			final int cy = layout.cellCenterY(k);
 			final int glyphSize = layout.glyphSize(active);
 
-			if ("numbers".equals(glyphType))
+			if (glyphType == HudGlyph.NUMBERS)
 			{
 				renderNumber(g, paletteSlot + 1, cx, cy, glyphSize, glyphCol, active && useBold);
 			}
@@ -162,7 +162,7 @@ public class ChromatickHudOverlay extends Overlay
 
 	/**
 	 * Clear the drag-tracking state so the next render() re-anchors cleanly.
-	 * Called from the plugin's setHudAnchorTarget after switching off "none".
+	 * Called from the plugin's setHudAnchorTarget after switching off NONE.
 	 */
 	void clearDragState()
 	{

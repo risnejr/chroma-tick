@@ -43,10 +43,12 @@ class ChromatickPanel extends PluginPanel
 {
 	private static final int MIN_CYCLE = PaletteService.MIN_CYCLE;
 	private static final int MAX_CYCLE = PaletteService.MAX_CYCLE;
-	private static final String CARD_GRID  = "grid";
-	private static final String CARD_WHEEL = "wheel";
-	// Pill-index → config string; must stay in sync with the Anchor pill order.
-	private static final String[] ANCHOR_TARGETS = {"head", "feet", "none"};
+	private static final String CARD_GRID  = PaletteMode.GRID.name();
+	private static final String CARD_WHEEL = PaletteMode.WHEEL.name();
+	// Pill-index → enum; must stay in sync with the Anchor pill order.
+	private static final HudAnchorTarget[] ANCHOR_TARGETS = {
+		HudAnchorTarget.HEAD, HudAnchorTarget.FEET, HudAnchorTarget.NONE
+	};
 
 	// Design tokens
 	private static final Color TRACK_BG  = new Color(0x1A1A1A);
@@ -250,9 +252,9 @@ class ChromatickPanel extends PluginPanel
 		content.add(Box.createVerticalStrut(4));
 
 		pickerToggle.addListener(idx -> {
-			String mode = idx == 0 ? CARD_GRID : CARD_WHEEL;
+			PaletteMode mode = idx == 0 ? PaletteMode.GRID : PaletteMode.WHEEL;
 			plugin.setPaletteMode(mode);
-			((CardLayout) pickerCard.getLayout()).show(pickerCard, mode);
+			((CardLayout) pickerCard.getLayout()).show(pickerCard, mode.name());
 			pickerCard.revalidate();
 			pickerCard.repaint();
 			syncPickerToEditingSlot();
@@ -400,9 +402,9 @@ class ChromatickPanel extends PluginPanel
 			"Anchor under the player's feet",
 			"Free-floating (alt+drag to reposition)"});
 		hudAnchorToggle.addListener(idx -> {
-			String target = ANCHOR_TARGETS[idx];
+			HudAnchorTarget target = ANCHOR_TARGETS[idx];
 			plugin.setHudAnchorTarget(target);
-			setOffsetSlidersEnabled(!"none".equals(target));
+			setOffsetSlidersEnabled(target != HudAnchorTarget.NONE);
 		});
 		hudBody.add(labeledToggleRow("Anchor", hudAnchorToggle));
 
@@ -547,9 +549,9 @@ class ChromatickPanel extends PluginPanel
 		// Wire glyph toggle — must come after hudBoldBox is initialized since the
 		// listener flips its enabled state.
 		hudStyleToggle.addListener(idx -> {
-			String glyph = idx == 0 ? "dots" : "numbers";
+			HudGlyph glyph = idx == 0 ? HudGlyph.DOTS : HudGlyph.NUMBERS;
 			plugin.setHudGlyph(glyph);
-			hudBoldBox.setEnabled("numbers".equals(glyph));
+			hudBoldBox.setEnabled(glyph == HudGlyph.NUMBERS);
 		});
 
 		hudSection.add(hudBody);
@@ -559,8 +561,8 @@ class ChromatickPanel extends PluginPanel
 
 		// ─── Initial state ────────────────────────────────────────────────
 		modeToggle.setSelected(cfg.staticMode() ? 1 : 0);
-		pickerToggle.setSelected(CARD_WHEEL.equals(cfg.paletteMode()) ? 1 : 0);
-		((CardLayout) pickerCard.getLayout()).show(pickerCard, cfg.paletteMode());
+		pickerToggle.setSelected(cfg.paletteMode() == PaletteMode.WHEEL ? 1 : 0);
+		((CardLayout) pickerCard.getLayout()).show(pickerCard, cfg.paletteMode().name());
 		sequentialFill.setSelected(cfg.sequentialFill());
 		setBorderWidthControls((int) Math.round(cfg.tileBorderWidth()));
 		fillEnableBox.setSelected(cfg.enableFillColor());
@@ -572,7 +574,7 @@ class ChromatickPanel extends PluginPanel
 		drawBelowTextLabel.setText(drawBelowText(cfg.drawBelowPlayer()));
 
 		displayToggle.setSelected(displayModeIdx(cfg.displayMode()));
-		hudStyleToggle.setSelected("numbers".equals(cfg.hudGlyph()) ? 1 : 0);
+		hudStyleToggle.setSelected(cfg.hudGlyph() == HudGlyph.NUMBERS ? 1 : 0);
 		hudOrientBox.setSelected(cfg.hudVertical());
 		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
 		hudOrientGlyph.setVertical(cfg.hudVertical());
@@ -585,9 +587,9 @@ class ChromatickPanel extends PluginPanel
 		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, cfg.hudSpacing(), "px");
 		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, cfg.hudHorizontalOffset(), "px");
 		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, cfg.hudVerticalOffset(), "px");
-		setOffsetSlidersEnabled(!"none".equals(cfg.hudAnchorTarget()));
+		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
 		hudBoldBox.setSelected(cfg.hudBold());
-		hudBoldBox.setEnabled("numbers".equals(cfg.hudGlyph()));
+		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
 
 		selectedCycle = PaletteService.clampCycle(plugin.getEffectiveCycleLength());
 		applyModeVisibility(cfg.staticMode());
@@ -598,31 +600,30 @@ class ChromatickPanel extends PluginPanel
 		selectInitialEditingSlot();
 	}
 
-	private static int displayModeIdx(String mode)
+	private static int displayModeIdx(DisplayMode mode)
 	{
-		if ("hud".equals(mode))  return 1;
-		if ("both".equals(mode)) return 2;
-		return 0;
+		switch (mode)
+		{
+			case HUD:  return 1;
+			case BOTH: return 2;
+			default:   return 0;
+		}
 	}
 
-	private static String displayModeForIdx(int idx)
+	private static DisplayMode displayModeForIdx(int idx)
 	{
 		switch (idx)
 		{
-			case 1:  return "hud";
-			case 2:  return "both";
-			default: return "tile";
+			case 1:  return DisplayMode.HUD;
+			case 2:  return DisplayMode.BOTH;
+			default: return DisplayMode.TILE;
 		}
 	}
 
-	private void applyDisplayVisibility(String mode)
+	private void applyDisplayVisibility(DisplayMode mode)
 	{
-		boolean tile = "tile".equals(mode) || "both".equals(mode);
-		boolean hud  = "hud".equals(mode)  || "both".equals(mode);
-		if (!tile && !hud)
-		{
-			tile = true;
-		}
+		boolean tile = mode == DisplayMode.TILE || mode == DisplayMode.BOTH;
+		boolean hud  = mode == DisplayMode.HUD  || mode == DisplayMode.BOTH;
 		tileSection.setVisible(tile);
 		hudSection.setVisible(hud);
 		revalidate();
@@ -636,7 +637,8 @@ class ChromatickPanel extends PluginPanel
 	 */
 	private void applyCycleLengthEnabled(ChromatickConfig cfg)
 	{
-		boolean hudVisible = "hud".equals(cfg.displayMode()) || "both".equals(cfg.displayMode());
+		boolean hudVisible = cfg.displayMode() == DisplayMode.HUD
+			|| cfg.displayMode() == DisplayMode.BOTH;
 		boolean enabled = !cfg.staticMode() || hudVisible;
 		for (CycleTabButton b : tabButtons)
 		{
@@ -664,13 +666,13 @@ class ChromatickPanel extends PluginPanel
 		hudXOffsetValueLabel.setEnabled(en);
 	}
 
-	private static int anchorTargetIdx(String target)
+	private static int anchorTargetIdx(HudAnchorTarget target)
 	{
 		switch (target)
 		{
-			case "head": return 0;
-			case "none": return 2;
-			default:     return 1; // feet
+			case HEAD: return 0;
+			case NONE: return 2;
+			default:   return 1; // FEET
 		}
 	}
 
@@ -713,7 +715,7 @@ class ChromatickPanel extends PluginPanel
 		displayToggle.setSelected(displayModeIdx(cfg.displayMode()));
 		applyDisplayVisibility(cfg.displayMode());
 		applyCycleLengthEnabled(cfg);
-		hudStyleToggle.setSelected("numbers".equals(cfg.hudGlyph()) ? 1 : 0);
+		hudStyleToggle.setSelected(cfg.hudGlyph() == HudGlyph.NUMBERS ? 1 : 0);
 		hudOrientBox.setSelected(cfg.hudVertical());
 		hudOrientTextLabel.setText(orientText(cfg.hudVertical()));
 		hudOrientGlyph.setVertical(cfg.hudVertical());
@@ -726,9 +728,9 @@ class ChromatickPanel extends PluginPanel
 		setIntSliderControls(hudSpacingSlider, hudSpacingValueLabel, cfg.hudSpacing(), "px");
 		setIntSliderControls(hudXOffsetSlider, hudXOffsetValueLabel, cfg.hudHorizontalOffset(), "px");
 		setIntSliderControls(hudOffsetSlider, hudOffsetValueLabel, cfg.hudVerticalOffset(), "px");
-		setOffsetSlidersEnabled(!"none".equals(cfg.hudAnchorTarget()));
+		setOffsetSlidersEnabled(cfg.hudAnchorTarget() != HudAnchorTarget.NONE);
 		hudBoldBox.setSelected(cfg.hudBold());
-		hudBoldBox.setEnabled("numbers".equals(cfg.hudGlyph()));
+		hudBoldBox.setEnabled(cfg.hudGlyph() == HudGlyph.NUMBERS);
 	}
 
 	void onPaletteChanged(int cycleN)
