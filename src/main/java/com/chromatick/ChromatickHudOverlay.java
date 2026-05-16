@@ -39,6 +39,7 @@ public class ChromatickHudOverlay extends Overlay
 	private final ChromatickPlugin plugin;
 	private final ChromatickConfig config;
 	private final Client client;
+	private final PaletteService palettes;
 
 	/** The location we last set on the overlay ourselves; used to detect user drag. */
 	private Point lastSetLocation = null;
@@ -47,12 +48,13 @@ public class ChromatickHudOverlay extends Overlay
 	private int lastCanvasH = -1;
 
 	@Inject
-	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client)
+	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client, PaletteService palettes)
 	{
 		super(plugin);
 		this.plugin = plugin;
 		this.config = config;
 		this.client = client;
+		this.palettes = palettes;
 		setPosition(OverlayPosition.DYNAMIC);
 		setMovable(true);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -245,7 +247,7 @@ public class ChromatickHudOverlay extends Overlay
 			}
 			return arr;
 		}
-		return plugin.getCustomPaletteForCycle(cycleLength);
+		return palettes.getCustomPaletteForCycle(cycleLength);
 	}
 
 	private void renderDot(Graphics2D g, int cx, int cy, int size, Color color)
