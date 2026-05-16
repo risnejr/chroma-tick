@@ -3,10 +3,15 @@ package com.chromatick;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.KeyEvent;
+import java.util.EnumSet;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.Getter;
 import net.runelite.api.Client;
+import net.runelite.api.Player;
+import net.runelite.api.Prayer;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.Keybind;
@@ -48,6 +53,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private PaletteService palettes;
 
 	@Inject
+	private PrayerRecorderService recorder;
+
+	@Inject
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
@@ -73,6 +81,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	/** Hotkey override for cycle length; -1 = use config slider value. */
 	private int cycleLengthOverride = -1;
 
+	/** World position last game tick — used to detect movement for the recorder. */
+	private WorldPoint lastWorldPoint = null;
+
 	private ChromatickPanel panel;
 	private NavigationButton navButton;
 
@@ -90,6 +101,8 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		keyManager.registerKeyListener(this);
 		tickIndex = 0;
 		cycleLengthOverride = -1;
+		lastWorldPoint = null;
+		recorder.setMode(config.recordMode());
 		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
 
 		panel = new ChromatickPanel(this, palettes);
@@ -115,6 +128,8 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		}
 		panel = null;
 		tickIndex = 0;
+		lastWorldPoint = null;
+		recorder.clear();
 	}
 
 
@@ -126,6 +141,25 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		int cycleLength = getEffectiveCycleLength();
 		tickIndex = (tickIndex + 1) % cycleLength;
 		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+
+		// Feed the prayer recorder. Cheap when mode == OFF (early return).
+		Player local = client.getLocalPlayer();
+		WorldPoint pos = local != null ? local.getWorldLocation() : null;
+		boolean moved = pos != null && lastWorldPoint != null && !lastWorldPoint.equals(pos);
+		if (pos != null)
+		{
+			lastWorldPoint = pos;
+		}
+		recorder.onTick(tickIndex, activeProtectPrayers(), moved, config.recordArmTicks());
+	}
+
+	private Set<Prayer> activeProtectPrayers()
+	{
+		EnumSet<Prayer> active = EnumSet.noneOf(Prayer.class);
+		if (client.isPrayerActive(Prayer.PROTECT_FROM_MELEE))    active.add(Prayer.PROTECT_FROM_MELEE);
+		if (client.isPrayerActive(Prayer.PROTECT_FROM_MISSILES)) active.add(Prayer.PROTECT_FROM_MISSILES);
+		if (client.isPrayerActive(Prayer.PROTECT_FROM_MAGIC))    active.add(Prayer.PROTECT_FROM_MAGIC);
+		return active;
 	}
 
 	@Subscribe
@@ -147,6 +181,11 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if ("displayMode".equals(key))
 		{
 			applyDisplayMode();
+		}
+
+		if ("recordMode".equals(key))
+		{
+			recorder.setMode(config.recordMode());
 		}
 
 		if (panel == null)
@@ -182,6 +221,11 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if (config.toggleOverlayHotkey().matches(e))
 		{
 			configManager.setConfiguration("chromatick", "staticMode", !config.staticMode());
+		}
+
+		if (config.recordModeHotkey().matches(e))
+		{
+			setRecordMode(config.recordMode().next());
 		}
 
 		for (int n = MIN_CYCLE; n <= MAX_CYCLE; n++)
