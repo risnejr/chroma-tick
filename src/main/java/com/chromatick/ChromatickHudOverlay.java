@@ -9,15 +9,11 @@ import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
-import net.runelite.api.Prayer;
 import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.gameval.SpriteID;
-import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
@@ -42,7 +38,7 @@ public class ChromatickHudOverlay extends Overlay
 	private final Client client;
 	private final PaletteService palettes;
 	private final TickRecorderService recorder;
-	private final SpriteManager spriteManager;
+	private final RecordedIconResolver iconResolver;
 
 	/** The location we last set on the overlay ourselves; used to detect user drag. */
 	private Point lastSetLocation = null;
@@ -58,19 +54,9 @@ public class ChromatickHudOverlay extends Overlay
 	 */
 	private volatile boolean userDragged = false;
 
-	/**
-	 * Lazy-loaded prayer sprite cache. Fields are volatile so the render
-	 * thread sees the SpriteManager callback's write without explicit
-	 * synchronisation; null until the async load completes.
-	 */
-	private volatile BufferedImage spriteMelee;
-	private volatile BufferedImage spriteMissiles;
-	private volatile BufferedImage spriteMagic;
-	private boolean spritesRequested = false;
-
 	@Inject
 	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client,
-		PaletteService palettes, TickRecorderService recorder, SpriteManager spriteManager)
+		PaletteService palettes, TickRecorderService recorder, RecordedIconResolver iconResolver)
 	{
 		super(plugin);
 		this.plugin = plugin;
@@ -78,7 +64,7 @@ public class ChromatickHudOverlay extends Overlay
 		this.client = client;
 		this.palettes = palettes;
 		this.recorder = recorder;
-		this.spriteManager = spriteManager;
+		this.iconResolver = iconResolver;
 		setPosition(OverlayPosition.DYNAMIC);
 		setMovable(true);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -140,7 +126,7 @@ public class ChromatickHudOverlay extends Overlay
 
 		if (layout.showIcons)
 		{
-			ensureSpritesRequested();
+			iconResolver.ensureLoaded();
 		}
 
 		// While anchored, place the overlay so the bar's center sits at the
@@ -374,52 +360,16 @@ public class ChromatickHudOverlay extends Overlay
 		return Math.max(lo, Math.min(hi, v));
 	}
 
-	// ─── Per-tick prayer recorder ───────────────────────────────────────
-
-	private void ensureSpritesRequested()
-	{
-		if (spritesRequested)
-		{
-			return;
-		}
-		spritesRequested = true;
-		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
-		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
-		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
-	}
-
-	private BufferedImage spriteFor(Prayer p)
-	{
-		switch (p)
-		{
-			case PROTECT_FROM_MELEE:    return spriteMelee;
-			case PROTECT_FROM_MISSILES: return spriteMissiles;
-			case PROTECT_FROM_MAGIC:    return spriteMagic;
-			default: return null;
-		}
-	}
+	// ─── Per-tick recorder ──────────────────────────────────────────────
 
 	/**
-	 * Render the recorded prayer icon (if any) for tick slot {@code k}.
-	 * Only one Protect-from-X prayer can be active at a time in OSRS, so
-	 * we render the first one we find in the captured set.
+	 * Render the recorded icon (if any) for tick slot {@code k}. Sprite
+	 * resolution lives in {@link RecordedIconResolver}; the overlay just
+	 * asks for "what to draw at this tick" and places it.
 	 */
 	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
 	{
-		Set<Prayer> recorded = recorder.getPrayersAtTick(k);
-		if (recorded.isEmpty())
-		{
-			return;
-		}
-		BufferedImage sprite = null;
-		for (Prayer p : recorded)
-		{
-			sprite = spriteFor(p);
-			if (sprite != null)
-			{
-				break;
-			}
-		}
+		BufferedImage sprite = iconResolver.spriteFor(recorder.getPrayersAtTick(k));
 		if (sprite == null)
 		{
 			return;
