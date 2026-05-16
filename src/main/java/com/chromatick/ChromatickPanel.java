@@ -564,12 +564,18 @@ class ChromatickPanel extends PluginPanel
 		hudBody.add(Box.createVerticalStrut(8));
 
 		// ── Recorder subgroup ─────────────────────────────────────────────
-		hudBody.add(subgroupLabelRow("Recorder"));
-		hudBody.add(Box.createVerticalStrut(2));
+		// Construct the components first so the mode-pill listener can safely
+		// reference recordModeDot / recordArmTicksSlider / recordArmTicksValueLabel
+		// — Java's definite-assignment rule rejects forward references through
+		// final fields captured by a lambda.
+		recordModeDot            = new RecordModeDot();
+		recordModeToggle         = new PillToggle(new String[]{"Off", "Arm", "Always"});
+		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
+		recordArmTicksSlider     = themedSlider(1, 10);
+		recordArmTicksValueLabel = compactValueLabel();
 
 		// Mode pill — Off / Arm / Always — with a colored status dot mirroring
 		// the on-HUD indicator so users can see what the dot color means.
-		recordModeToggle = new PillToggle(new String[]{"Off", "Arm", "Always"});
 		recordModeToggle.setPillTooltips(new String[]{
 			"Recorder off",
 			"Capture once on your next move",
@@ -581,22 +587,16 @@ class ChromatickPanel extends PluginPanel
 			recordArmTicksSlider.setEnabled(mode == RecordMode.ARM);
 			recordArmTicksValueLabel.setEnabled(mode == RecordMode.ARM);
 		});
-		recordModeDot = new RecordModeDot();
-		hudBody.add(modeRowWithDot("Mode", recordModeToggle, recordModeDot));
 
 		// Icon position — Above / Below the glyph row.
-		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
 		recordIconPositionToggle.setPillTooltips(new String[]{
 			"Icons render above the row",
 			"Icons render below the row"});
 		recordIconPositionToggle.addListener(idx ->
 			plugin.setRecordIconPosition(IconPosition.values()[idx]));
-		hudBody.add(labeledToggleRow("Icons", recordIconPositionToggle));
 
 		// Arm length — total ticks captured per ARM trigger. 1 = the movement
 		// tick alone; 2 = movement tick + 1 more; etc.
-		recordArmTicksSlider     = themedSlider(1, 10);
-		recordArmTicksValueLabel = compactValueLabel();
 		recordArmTicksSlider.addChangeListener(e -> {
 			int v = recordArmTicksSlider.getValue();
 			recordArmTicksValueLabel.setText(valueFmt(v, "t"));
@@ -605,6 +605,11 @@ class ChromatickPanel extends PluginPanel
 		addResetGesture(recordArmTicksSlider, 1);
 		recordArmTicksSlider.setToolTipText(
 			"Ticks captured per ARM trigger (movement tick + N-1 more). Right-click to reset.");
+
+		hudBody.add(subgroupLabelRow("Recorder"));
+		hudBody.add(Box.createVerticalStrut(2));
+		hudBody.add(modeRowWithDot("Mode", recordModeToggle, recordModeDot));
+		hudBody.add(labeledToggleRow("Icons", recordIconPositionToggle));
 		hudBody.add(labeledSliderRow("Arm length", recordArmTicksSlider, recordArmTicksValueLabel));
 
 		hudSection.add(hudBody);
