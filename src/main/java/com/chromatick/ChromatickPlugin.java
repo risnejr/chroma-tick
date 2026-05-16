@@ -85,6 +85,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	@Override
 	protected void startUp() throws Exception
 	{
+		migrateLegacyEnumValues();
 		applyDisplayMode();
 		keyManager.registerKeyListener(this);
 		tickIndex = 0;
@@ -265,7 +266,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		configManager.setConfiguration("chromatick", "drawBelowPlayer", on);
 	}
 
-	void setPaletteMode(String mode)
+	void setPaletteMode(PaletteMode mode)
 	{
 		configManager.setConfiguration("chromatick", "paletteMode", mode);
 	}
@@ -277,12 +278,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	// ─── HUD overlay setters ────────────────────────────────────────────
 
-	void setDisplayMode(String mode)
+	void setDisplayMode(DisplayMode mode)
 	{
 		configManager.setConfiguration("chromatick", "displayMode", mode);
 	}
 
-	void setHudGlyph(String glyph)
+	void setHudGlyph(HudGlyph glyph)
 	{
 		configManager.setConfiguration("chromatick", "hudGlyph", glyph);
 	}
@@ -325,12 +326,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	/**
 	 * Set the anchor target. When switching to head/feet we also clear the
 	 * overlay's drag-tracking state so it re-positions cleanly on the next
-	 * frame. Switching to "none" preserves the current position.
+	 * frame. Switching to NONE preserves the current position.
 	 */
-	void setHudAnchorTarget(String target)
+	void setHudAnchorTarget(HudAnchorTarget target)
 	{
 		configManager.setConfiguration("chromatick", "hudAnchorTarget", target);
-		if (!"none".equals(target))
+		if (target != HudAnchorTarget.NONE)
 		{
 			hudOverlay.clearDragState();
 		}
@@ -353,14 +354,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	private void applyDisplayMode()
 	{
-		String mode = config.displayMode();
-		boolean tile = "tile".equals(mode) || "both".equals(mode);
-		boolean hud  = "hud".equals(mode)  || "both".equals(mode);
-		// Default to tile if config value is unrecognised (forward-compat).
-		if (!tile && !hud)
-		{
-			tile = true;
-		}
+		DisplayMode mode = config.displayMode();
+		boolean tile = mode == DisplayMode.TILE || mode == DisplayMode.BOTH;
+		boolean hud  = mode == DisplayMode.HUD  || mode == DisplayMode.BOTH;
 		if (tile)
 		{
 			overlayManager.add(tileOverlay);
@@ -405,5 +401,48 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	{
 		Color[] palette = palettes.getCustomPaletteForCycle(getEffectiveCycleLength());
 		return palette[index % palette.length];
+	}
+
+	/**
+	 * Rewrite legacy lowercase string values for the four enum-typed config
+	 * keys (displayMode/hudGlyph/hudAnchorTarget/paletteMode) to their
+	 * uppercase enum names. Pre-1.0 the plugin stored these as raw lowercase
+	 * strings; once the getters return enums those raw values fail to
+	 * deserialize and silently snap to the default. Runs once per startUp;
+	 * already-migrated values are no-ops.
+	 */
+	private void migrateLegacyEnumValues()
+	{
+		migrateEnumKey("displayMode", DisplayMode.class);
+		migrateEnumKey("hudGlyph", HudGlyph.class);
+		migrateEnumKey("hudAnchorTarget", HudAnchorTarget.class);
+		migrateEnumKey("paletteMode", PaletteMode.class);
+	}
+
+	private <T extends Enum<T>> void migrateEnumKey(String key, Class<T> enumType)
+	{
+		String raw = configManager.getConfiguration("chromatick", key);
+		if (raw == null || raw.isEmpty())
+		{
+			return;
+		}
+		try
+		{
+			Enum.valueOf(enumType, raw);
+			return; // already in canonical form
+		}
+		catch (IllegalArgumentException ignored)
+		{
+			// fall through to migration attempt
+		}
+		try
+		{
+			T migrated = Enum.valueOf(enumType, raw.toUpperCase(java.util.Locale.ROOT));
+			configManager.setConfiguration("chromatick", key, migrated.name());
+		}
+		catch (IllegalArgumentException ignored)
+		{
+			// Unknown legacy value — leave it so RuneLite falls back to default.
+		}
 	}
 }
