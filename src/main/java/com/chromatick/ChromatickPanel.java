@@ -652,7 +652,12 @@ class ChromatickPanel extends PluginPanel
 		recordModeToggle.setSelected(cfg.recordMode().ordinal());
 		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
 		recordModeDot.setMode(cfg.recordMode());
-		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel, cfg.recordArmTicks(), "t");
+		// Cap the slider max at the current effective cycle length — recording
+		// past the cycle length just overdubs the same indices.
+		int armMax = plugin.getEffectiveCycleLength();
+		recordArmTicksSlider.setMaximum(armMax);
+		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
+			Math.min(cfg.recordArmTicks(), armMax), "t");
 		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
 
@@ -800,7 +805,12 @@ class ChromatickPanel extends PluginPanel
 		recordModeToggle.setSelected(cfg.recordMode().ordinal());
 		recordIconPositionToggle.setSelected(cfg.recordIconPosition().ordinal());
 		recordModeDot.setMode(cfg.recordMode());
-		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel, cfg.recordArmTicks(), "t");
+		// Cap the slider max at the current effective cycle length — recording
+		// past the cycle length just overdubs the same indices.
+		int armMax = plugin.getEffectiveCycleLength();
+		recordArmTicksSlider.setMaximum(armMax);
+		setIntSliderControls(recordArmTicksSlider, recordArmTicksValueLabel,
+			Math.min(cfg.recordArmTicks(), armMax), "t");
 		recordArmTicksSlider.setEnabled(cfg.recordMode() == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(cfg.recordMode() == RecordMode.ARM);
 	}

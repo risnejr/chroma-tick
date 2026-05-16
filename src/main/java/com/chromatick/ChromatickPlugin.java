@@ -180,6 +180,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		if ("cycleLength".equals(key))
 		{
 			cycleLengthOverride = -1;
+			clampRecordArmTicksToCycle();
 		}
 		int cycleLength = getEffectiveCycleLength();
 		tickIndex = tickIndex % cycleLength;
@@ -242,6 +243,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			if (getCycleHotkeyByLength(n).matches(e))
 			{
 				cycleLengthOverride = n;
+				clampRecordArmTicksToCycle();
 				if (panel != null)
 				{
 					SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -255,6 +257,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			cycleLengthOverride = -1;
 			tickIndex = 0;
 			currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
+			clampRecordArmTicksToCycle();
 			if (panel != null)
 			{
 				SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -419,7 +422,22 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	void setRecordArmTicks(int ticks)
 	{
-		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, Math.min(10, ticks)));
+		int max = getEffectiveCycleLength();
+		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, Math.min(max, ticks)));
+	}
+
+	/**
+	 * If the current arm-ticks setting exceeds the effective cycle length
+	 * (e.g. user shrank the cycle from 10 to 4 with arm-ticks at 8), persist
+	 * a clamped value so the recorder and panel can't drift out of sync.
+	 */
+	private void clampRecordArmTicksToCycle()
+	{
+		int max = getEffectiveCycleLength();
+		if (config.recordArmTicks() > max)
+		{
+			configManager.setConfiguration("chromatick", "recordArmTicks", max);
+		}
 	}
 
 	private void applyDisplayMode()
