@@ -15,8 +15,8 @@ import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
-import net.runelite.api.SpriteID;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.gameval.SpriteID;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -383,9 +383,9 @@ public class ChromatickHudOverlay extends Overlay
 			return;
 		}
 		spritesRequested = true;
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
+		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
+		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
+		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
 	}
 
 	private BufferedImage spriteFor(Prayer p)
