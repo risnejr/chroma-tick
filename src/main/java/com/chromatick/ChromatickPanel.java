@@ -493,10 +493,7 @@ class ChromatickPanel extends PluginPanel
 		hudScaleSlider.addChangeListener(e -> {
 			int v = hudScaleSlider.getValue();
 			hudScaleValueLabel.setText(valueFmt(v, "%"));
-			if (v != plugin.snapshot().hudScale)
-			{
-				plugin.setHudScale(v);
-			}
+			plugin.setHudScale(v);
 		});
 		addResetGesture(hudScaleSlider, 200);
 		hudScaleSlider.setToolTipText("HUD scale. Right-click to reset.");
