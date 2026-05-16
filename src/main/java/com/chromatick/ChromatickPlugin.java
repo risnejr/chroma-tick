@@ -202,6 +202,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		}
 		if ("cycleLength".equals(key) || "staticMode".equals(key) || "displayMode".equals(key)
 			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key)
+			|| "hudVertical".equals(key)
 			|| "recordMode".equals(key) || "recordIconPosition".equals(key)
 			|| "recordArmTicks".equals(key))
 		{
