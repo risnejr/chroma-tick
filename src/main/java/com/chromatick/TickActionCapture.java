@@ -69,31 +69,31 @@ class TickActionCapture
 	}
 
 	/**
-	 * Classify a menu click into one of ITEM_USE / YELLOW_CLICK / RED_CLICK.
-	 * Mutually exclusive — a click can only be one of the three at a time.
+	 * Classify a menu click into one of ITEM_USE / YELLOW_CLICK / RED_CLICK,
+	 * or return {@code null} to skip it entirely.
 	 *
-	 * <p>Matches the OSRS click-cross convention the player actually sees:
+	 * <p>Matches the OSRS click-cross convention the player actually sees —
+	 * the cross only appears on world clicks, never on inventory tab /
+	 * spellbook / prayer book / chatbox / RuneLite menu interactions.
 	 *
 	 * <ul>
-	 *   <li>ITEM_USE — any {@link MenuAction#WIDGET_TARGET_ON_GAME_OBJECT}
-	 *       / NPC / PLAYER / GROUND_ITEM / WIDGET. Source item ID comes
+	 *   <li><b>null (skipped)</b> — UI/menu clicks (CC_OP, WIDGET_*, RuneLite
+	 *       custom menus, CANCEL dismissals). No cross renders in-game, so
+	 *       we don't record one either.
+	 *   <li>ITEM_USE — any {@code WIDGET_TARGET_ON_*}. Source item ID comes
 	 *       from {@link Client#getSelectedWidget()} (the item the player
 	 *       picked up the cursor with).
 	 *   <li>YELLOW_CLICK — {@link MenuAction#WALK} only. The yellow cross
 	 *       in-game appears solely on walk-here clicks (empty terrain or
-	 *       a tile with no interactable). {@link MenuAction#CANCEL} is
-	 *       filtered out — it fires when the user dismisses a context
-	 *       menu without picking an option, which isn't a click event in
-	 *       the perceptual sense.
-	 *   <li>RED_CLICK — everything else. Talk-to, Attack, mine, chop,
-	 *       use-object, etc.; the red cross appears for any actionable
-	 *       click on a target.
+	 *       a tile with no interactable).
+	 *   <li>RED_CLICK — everything else <em>in the world</em>. Talk-to,
+	 *       Attack, mine, chop, use-object, examine, cast on NPC, etc.
 	 * </ul>
 	 */
 	private TickActionEvent classify(MenuOptionClicked event)
 	{
 		MenuAction action = event.getMenuAction();
-		if (action == MenuAction.CANCEL)
+		if (isUiClick(action))
 		{
 			return null;
 		}
@@ -108,6 +108,54 @@ class TickActionCapture
 			return TickActionEvent.of(TickActionCategory.YELLOW_CLICK, TickActionEvent.NONE);
 		}
 		return TickActionEvent.of(TickActionCategory.RED_CLICK, TickActionEvent.NONE);
+	}
+
+	/**
+	 * True for menu actions that fire on UI/widget interactions — inventory
+	 * tabs, spellbook entries, prayer book toggles, chat options, RuneLite
+	 * custom menu items, and the dismissal of any context menu. The OSRS
+	 * click cross doesn't render for these, so we don't record them as
+	 * red/yellow clicks either.
+	 *
+	 * <p>Note: {@link MenuAction#WIDGET_TARGET} (the "I selected this item
+	 * to use on something" step) is also UI-only — the actual use-on click
+	 * comes through as a {@code WIDGET_TARGET_ON_*} action and lands in
+	 * ITEM_USE classification later.
+	 */
+	private static boolean isUiClick(MenuAction action)
+	{
+		if (action == null)
+		{
+			return true;
+		}
+		switch (action)
+		{
+			case CC_OP:
+			case CC_OP_LOW_PRIORITY:
+			case WIDGET_TYPE_1:
+			case WIDGET_TYPE_4:
+			case WIDGET_TYPE_5:
+			case WIDGET_TARGET:
+			case WIDGET_CLOSE:
+			case WIDGET_CONTINUE:
+			case WIDGET_FIRST_OPTION:
+			case WIDGET_SECOND_OPTION:
+			case WIDGET_THIRD_OPTION:
+			case WIDGET_FOURTH_OPTION:
+			case WIDGET_FIFTH_OPTION:
+			case RUNELITE:
+			case RUNELITE_WIDGET:
+			case RUNELITE_HIGH_PRIORITY:
+			case RUNELITE_LOW_PRIORITY:
+			case RUNELITE_OVERLAY:
+			case RUNELITE_OVERLAY_CONFIG:
+			case RUNELITE_PLAYER:
+			case RUNELITE_INFOBOX:
+			case CANCEL:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private static boolean isItemUseAction(MenuAction action)
