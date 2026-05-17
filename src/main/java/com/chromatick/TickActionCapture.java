@@ -15,11 +15,25 @@ import net.runelite.client.eventbus.Subscribe;
  * the buffered events in {@code onGameTick}; the recorder filters by the
  * user's enabled categories from there.
  *
- * <p>Captures one click per tick interval (item-use, yellow or red);
- * latest wins. Item-use detection looks at {@link MenuAction}'s family
- * of {@code WIDGET_TARGET_ON_*} values and pulls the source item ID
- * from {@link Client#getSelectedWidget()} — that's the item the player
- * had selected before clicking the target.
+ * <p>Captures at most one click per tick interval with a small priority
+ * chain (within the click slot — prayer events live separately and
+ * always render above clicks in the resolver):
+ * <ol>
+ *   <li><b>ITEM_USE</b> outranks YELLOW/RED. Once an item-use lands in
+ *       the slot, a subsequent walk / talk / attack in the same tick
+ *       can't displace it — using an item is the more informative
+ *       action.
+ *   <li><b>YELLOW vs RED</b> — latest wins. A walk-here after a talk-to
+ *       (or vice versa) shows the more recent click.
+ *   <li>UI/menu clicks ({@code CC_OP}, widget ops, RuneLite menus) and
+ *       {@code CANCEL} dismissals are filtered out entirely and never
+ *       overwrite a real captured click.
+ * </ol>
+ *
+ * <p>Item-use detection looks at {@link MenuAction}'s family of
+ * {@code WIDGET_TARGET_ON_*} values and pulls the source item ID from
+ * {@link Client#getSelectedWidget()} — that's the item the player had
+ * selected before clicking the target.
  *
  * <p>Threading: RuneLite delivers events on the client thread; the
  * plugin reads on the same thread in {@code onGameTick}. Single-threaded
@@ -42,12 +56,23 @@ class TickActionCapture
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		TickActionEvent classified = classify(event);
-		// Null = filtered (e.g. CANCEL dismissals). Don't overwrite an
-		// earlier real click in the same tick interval with a no-op.
-		if (classified != null)
+		// Null = filtered (UI clicks, CANCEL dismissals). Skip — don't
+		// overwrite an earlier real click in the same tick interval.
+		if (classified == null)
 		{
-			pendingClick = classified;
+			return;
 		}
+		// Within-tick priority: ITEM_USE outranks YELLOW/RED. If we already
+		// buffered an item-use, don't let a subsequent walk / talk / attack
+		// click in the same tick interval bury it — using an item is the
+		// more informative action.
+		if (pendingClick != null
+			&& pendingClick.category() == TickActionCategory.ITEM_USE
+			&& classified.category() != TickActionCategory.ITEM_USE)
+		{
+			return;
+		}
+		pendingClick = classified;
 	}
 
 	/**

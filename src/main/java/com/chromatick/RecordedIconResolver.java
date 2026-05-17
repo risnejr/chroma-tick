@@ -129,10 +129,20 @@ class RecordedIconResolver
 
 	/**
 	 * Resolve the icon to render for a recorded tick. Walks the event
-	 * list in declaration order and returns the first event that resolves
-	 * to a renderable icon (either a loaded sprite or a primitive dot).
+	 * list in insertion order — the plugin's {@code buildTickEvents} adds
+	 * prayer events first, then the captured click, so this naturally
+	 * yields the rendering priority:
+	 * <ol>
+	 *   <li>PROTECTION_PRAYER always wins when one is active and the
+	 *       prayer sprite has loaded.
+	 *   <li>ITEM_USE or YELLOW/RED click otherwise (the click slot's
+	 *       internal ITEM_USE-vs-YELLOW/RED priority is enforced by
+	 *       {@link TickActionCapture}, so only one click event ever
+	 *       reaches the recorder per tick).
+	 * </ol>
 	 * Returns {@code null} when nothing was recorded or no event yet has
-	 * a renderable icon (e.g. sprite still loading).
+	 * a renderable icon (e.g. sprite still loading — render falls back to
+	 * the next event, or nothing if none).
 	 */
 	RecordedIcon iconFor(RecordedTick recorded)
 	{
