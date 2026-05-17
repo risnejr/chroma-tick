@@ -41,7 +41,13 @@ class TickActionCapture
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		pendingClick = classify(event);
+		TickActionEvent classified = classify(event);
+		// Null = filtered (e.g. CANCEL dismissals). Don't overwrite an
+		// earlier real click in the same tick interval with a no-op.
+		if (classified != null)
+		{
+			pendingClick = classified;
+		}
 	}
 
 	/**
@@ -63,36 +69,45 @@ class TickActionCapture
 	}
 
 	/**
-	 * Classify a menu click into one of ITEM_USE / RED_CLICK / YELLOW_CLICK.
+	 * Classify a menu click into one of ITEM_USE / YELLOW_CLICK / RED_CLICK.
 	 * Mutually exclusive — a click can only be one of the three at a time.
+	 *
+	 * <p>Matches the OSRS click-cross convention the player actually sees:
 	 *
 	 * <ul>
 	 *   <li>ITEM_USE — any {@link MenuAction#WIDGET_TARGET_ON_GAME_OBJECT}
 	 *       / NPC / PLAYER / GROUND_ITEM / WIDGET. Source item ID comes
 	 *       from {@link Client#getSelectedWidget()} (the item the player
 	 *       picked up the cursor with).
-	 *   <li>RED_CLICK — menu option was "Attack" (case-insensitive). User
-	 *       mental model is "I saw a red cursor"; that's the simplest
-	 *       proxy.
-	 *   <li>YELLOW_CLICK — everything else (walk-here, talk, examine,
-	 *       generic interact, etc.).
+	 *   <li>YELLOW_CLICK — {@link MenuAction#WALK} only. The yellow cross
+	 *       in-game appears solely on walk-here clicks (empty terrain or
+	 *       a tile with no interactable). {@link MenuAction#CANCEL} is
+	 *       filtered out — it fires when the user dismisses a context
+	 *       menu without picking an option, which isn't a click event in
+	 *       the perceptual sense.
+	 *   <li>RED_CLICK — everything else. Talk-to, Attack, mine, chop,
+	 *       use-object, etc.; the red cross appears for any actionable
+	 *       click on a target.
 	 * </ul>
 	 */
 	private TickActionEvent classify(MenuOptionClicked event)
 	{
 		MenuAction action = event.getMenuAction();
+		if (action == MenuAction.CANCEL)
+		{
+			return null;
+		}
 		if (isItemUseAction(action))
 		{
 			int sourceItemId = selectedItemId();
 			int targetItemId = targetItemId(event, action);
 			return TickActionEvent.of(TickActionCategory.ITEM_USE, sourceItemId, targetItemId);
 		}
-		String option = event.getMenuOption();
-		if (option != null && option.equalsIgnoreCase("Attack"))
+		if (action == MenuAction.WALK)
 		{
-			return TickActionEvent.of(TickActionCategory.RED_CLICK, TickActionEvent.NONE);
+			return TickActionEvent.of(TickActionCategory.YELLOW_CLICK, TickActionEvent.NONE);
 		}
-		return TickActionEvent.of(TickActionCategory.YELLOW_CLICK, TickActionEvent.NONE);
+		return TickActionEvent.of(TickActionCategory.RED_CLICK, TickActionEvent.NONE);
 	}
 
 	private static boolean isItemUseAction(MenuAction action)
