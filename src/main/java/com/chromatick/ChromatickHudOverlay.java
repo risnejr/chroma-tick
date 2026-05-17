@@ -1,5 +1,6 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import java.awt.Canvas;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -8,16 +9,11 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
-import net.runelite.api.Prayer;
-import net.runelite.api.SpriteID;
 import net.runelite.api.coords.LocalPoint;
-import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
@@ -41,8 +37,8 @@ public class ChromatickHudOverlay extends Overlay
 	private final ChromatickConfig config;
 	private final Client client;
 	private final PaletteService palettes;
-	private final PrayerRecorderService recorder;
-	private final SpriteManager spriteManager;
+	private final TickRecorderService recorder;
+	private final RecordedIconResolver iconResolver;
 
 	/** The location we last set on the overlay ourselves; used to detect user drag. */
 	private Point lastSetLocation = null;
@@ -51,18 +47,16 @@ public class ChromatickHudOverlay extends Overlay
 	private int lastCanvasH = -1;
 
 	/**
-	 * Lazy-loaded prayer sprite cache. Fields are volatile so the render
-	 * thread sees the SpriteManager callback's write without explicit
-	 * synchronisation; null until the async load completes.
+	 * Signal that render() detected an alt-drag. The plugin drains this flag
+	 * on its next game tick and flips the anchor target to NONE. Volatile
+	 * because clearDragState() may run on the Swing EDT (panel callbacks)
+	 * while render runs on the client thread.
 	 */
-	private volatile BufferedImage spriteMelee;
-	private volatile BufferedImage spriteMissiles;
-	private volatile BufferedImage spriteMagic;
-	private boolean spritesRequested = false;
+	private volatile boolean userDragged = false;
 
 	@Inject
 	ChromatickHudOverlay(ChromatickPlugin plugin, ChromatickConfig config, Client client,
-		PaletteService palettes, PrayerRecorderService recorder, SpriteManager spriteManager)
+		PaletteService palettes, TickRecorderService recorder, RecordedIconResolver iconResolver)
 	{
 		super(plugin);
 		this.plugin = plugin;
@@ -70,7 +64,7 @@ public class ChromatickHudOverlay extends Overlay
 		this.client = client;
 		this.palettes = palettes;
 		this.recorder = recorder;
-		this.spriteManager = spriteManager;
+		this.iconResolver = iconResolver;
 		setPosition(OverlayPosition.DYNAMIC);
 		setMovable(true);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -98,19 +92,16 @@ public class ChromatickHudOverlay extends Overlay
 
 		// Drag detection: if we *think* we're anchored but the framework's
 		// preferred location no longer matches what we last set, the user must
-		// have alt-dragged the overlay. Flip the target to NONE — preserves
-		// the dragged position by virtue of not re-positioning each frame.
+		// have alt-dragged the overlay. Set userDragged so subsequent frames
+		// stop re-anchoring; the plugin observes the flag on its next game
+		// tick and flips the persisted anchor target to NONE.
 		HudAnchorTarget anchorTarget = config.hudAnchorTarget();
-		boolean anchored = anchorTarget != HudAnchorTarget.NONE;
-		if (anchored && !canvasResized && lastSetLocation != null)
+		boolean anchored = anchorTarget != HudAnchorTarget.NONE && !userDragged;
+		if (anchored && wasDragged(canvasResized, lastSetLocation, getPreferredLocation()))
 		{
-			Point current = getPreferredLocation();
-			if (current != null && !current.equals(lastSetLocation))
-			{
-				plugin.setHudAnchorTarget(HudAnchorTarget.NONE);
-				lastSetLocation = null;
-				anchored = false;
-			}
+			userDragged = true;
+			lastSetLocation = null;
+			anchored = false;
 		}
 
 		final int currentTick = Math.floorMod(plugin.getTickIndex(), cycleLength);
@@ -121,6 +112,11 @@ public class ChromatickHudOverlay extends Overlay
 		// can review the recording. Hidden only when mode is OFF AND there's
 		// nothing to show.
 		final boolean wantIcons = recordMode != RecordMode.OFF || recorder.hasCaptures();
+		// Combo layout reserves a second icon band so ITEM_USE renders
+		// source + target on opposite sides of the glyph row instead of
+		// cramming both into one slot.
+		final boolean comboCapable = plugin.enabledRecordCategories()
+			.contains(TickActionCategory.ITEM_USE);
 
 		final HudLayout layout = HudLayout.compute(
 			config.hudScale(),
@@ -130,12 +126,13 @@ public class ChromatickHudOverlay extends Overlay
 			config.hudVertical(),
 			cycleInPlace,
 			wantIcons,
-			config.recordIconPosition()
+			config.recordIconPosition(),
+			comboCapable
 		);
 
 		if (layout.showIcons)
 		{
-			ensureSpritesRequested();
+			iconResolver.ensureLoaded();
 		}
 
 		// While anchored, place the overlay so the bar's center sits at the
@@ -208,11 +205,44 @@ public class ChromatickHudOverlay extends Overlay
 
 	/**
 	 * Clear the drag-tracking state so the next render() re-anchors cleanly.
-	 * Called from the plugin's setHudAnchorTarget after switching off NONE.
+	 * Called from the plugin's setHudAnchorTarget after switching off NONE,
+	 * and on plugin startUp when re-adding the overlay.
 	 */
 	void clearDragState()
 	{
 		lastSetLocation = null;
+		userDragged = false;
+	}
+
+	/**
+	 * Read-and-clear: returns {@code true} once for each render-detected drag,
+	 * then resets the flag. The plugin calls this on each game tick so the
+	 * persisted anchor target can flip to NONE without render mutating state.
+	 */
+	boolean consumeUserDragged()
+	{
+		if (userDragged)
+		{
+			userDragged = false;
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * True when the framework's preferred location no longer matches what we
+	 * last set, meaning the user alt-dragged the overlay. Pure predicate —
+	 * extracted from render() so the edge cases (window resize, null seed
+	 * location, missing preferred location) can be pinned down with unit
+	 * tests without standing up a render context.
+	 */
+	static boolean wasDragged(boolean canvasResized, Point lastSet, Point current)
+	{
+		if (canvasResized || lastSet == null || current == null)
+		{
+			return false;
+		}
+		return !current.equals(lastSet);
 	}
 
 	/** Player's feet at ground level in canvas pixel space, or null if unavailable. */
@@ -336,60 +366,42 @@ public class ChromatickHudOverlay extends Overlay
 		return Math.max(lo, Math.min(hi, v));
 	}
 
-	// ─── Per-tick prayer recorder ───────────────────────────────────────
-
-	private void ensureSpritesRequested()
-	{
-		if (spritesRequested)
-		{
-			return;
-		}
-		spritesRequested = true;
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
-		spriteManager.getSpriteAsync(SpriteID.PRAYER_PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
-	}
-
-	private BufferedImage spriteFor(Prayer p)
-	{
-		switch (p)
-		{
-			case PROTECT_FROM_MELEE:    return spriteMelee;
-			case PROTECT_FROM_MISSILES: return spriteMissiles;
-			case PROTECT_FROM_MAGIC:    return spriteMagic;
-			default: return null;
-		}
-	}
+	// ─── Per-tick recorder ──────────────────────────────────────────────
 
 	/**
-	 * Render the recorded prayer icon (if any) for tick slot {@code k}.
-	 * Only one Protect-from-X prayer can be active at a time in OSRS, so
-	 * we render the first one we find in the captured set.
+	 * Render the recorded icon (if any) for tick slot {@code k}. Sprite,
+	 * combo (two sprites), or primitive-dot is decided in
+	 * {@link RecordedIconResolver}; the overlay just draws what it gets.
 	 */
 	private void renderRecordedIcon(Graphics2D g, HudLayout layout, int k)
 	{
-		Set<Prayer> recorded = recorder.getPrayersAtTick(k);
-		if (recorded.isEmpty())
+		RecordedIcon icon = iconResolver.iconFor(recorder.getRecordedAt(k));
+		if (icon == null)
 		{
 			return;
 		}
-		BufferedImage sprite = null;
-		for (Prayer p : recorded)
-		{
-			sprite = spriteFor(p);
-			if (sprite != null)
-			{
-				break;
-			}
-		}
-		if (sprite == null)
-		{
-			return;
-		}
-		int size = layout.iconSize();
+		int size = layout.glyphSize(false);
 		int cx = layout.iconCenterX(k);
 		int cy = layout.iconCenterY(k);
-		g.drawImage(sprite, cx - size / 2, cy - size / 2, size, size, null);
+		if (icon.sprite != null)
+		{
+			g.drawImage(icon.sprite, cx - size / 2, cy - size / 2, size, size, null);
+		}
+		else
+		{
+			// Primitive dot — antialiased filled oval at the icon slot.
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(icon.primitiveColor);
+			g2.fillOval(cx - size / 2, cy - size / 2, size, size);
+			g2.dispose();
+		}
+		if (icon.secondarySprite != null && layout.comboLayout)
+		{
+			int sx = layout.comboIconCenterX(k);
+			int sy = layout.comboIconCenterY(k);
+			g.drawImage(icon.secondarySprite, sx - size / 2, sy - size / 2, size, size, null);
+		}
 	}
 
 	private void renderModeIndicator(Graphics2D g, RecordMode mode)

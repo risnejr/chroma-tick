@@ -1,13 +1,16 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
-import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.Prayer;
@@ -15,6 +18,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.Keybind;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.KeyListener;
@@ -53,13 +57,28 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private PaletteService palettes;
 
 	@Inject
-	private PrayerRecorderService recorder;
+	private TickRecorderService recorder;
+
+	@Inject
+	private TickActionCapture capture;
+
+	@Inject
+	private EventBus eventBus;
+
+	@Inject
+	private ChromatickRuntimeState state;
+
+	@Inject
+	private ChromatickConfigMigrator configMigrator;
 
 	@Inject
 	private ChromatickOverlay tileOverlay;
 
 	@Inject
 	private ChromatickHudOverlay hudOverlay;
+
+	@Inject
+	private RecordedIconResolver iconResolver;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -69,20 +88,6 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	@Inject
 	private ClientToolbar clientToolbar;
-
-	/** Current position in the color cycle (0-based). */
-	@Getter
-	protected int tickIndex = 0;
-
-	/** The current color to render this tick. */
-	@Getter
-	protected Color currentColor = Color.WHITE;
-
-	/** Hotkey override for cycle length; -1 = use config slider value. */
-	private int cycleLengthOverride = -1;
-
-	/** World position last game tick — used to detect movement for the recorder. */
-	private WorldPoint lastWorldPoint = null;
 
 	private ChromatickPanel panel;
 	private NavigationButton navButton;
@@ -96,16 +101,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	@Override
 	protected void startUp() throws Exception
 	{
-		migrateLegacyEnumValues();
+		configMigrator.migrate();
 		applyDisplayMode();
 		keyManager.registerKeyListener(this);
-		tickIndex = 0;
-		cycleLengthOverride = -1;
-		lastWorldPoint = null;
+		eventBus.register(capture);
+		state.reset();
 		recorder.setMode(config.recordMode());
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
 
-		panel = new ChromatickPanel(this, palettes);
+		panel = new ChromatickPanel(this, palettes, iconResolver);
 		navButton = NavigationButton.builder()
 			.tooltip("ChromaTick")
 			.icon(ImageUtil.loadImageResource(getClass(), "icon.png"))
@@ -121,14 +125,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		overlayManager.remove(tileOverlay);
 		overlayManager.remove(hudOverlay);
 		keyManager.unregisterKeyListener(this);
+		eventBus.unregister(capture);
+		capture.reset();
 		if (navButton != null)
 		{
 			clientToolbar.removeNavigation(navButton);
 			navButton = null;
 		}
 		panel = null;
-		tickIndex = 0;
-		lastWorldPoint = null;
+		state.reset();
 		recorder.clear();
 	}
 
@@ -139,24 +144,38 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		// Static mode freezes the *color*, not the cycle. The HUD overlay still
 		// uses tickIndex to advance its active-glyph highlight.
 		int cycleLength = getEffectiveCycleLength();
-		tickIndex = (tickIndex + 1) % cycleLength;
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+		int nextTick = (state.getTickIndex() + 1) % cycleLength;
+		state.setTickIndex(nextTick);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(nextTick));
 
 		// Feed the prayer recorder. Cheap when mode == OFF (early return).
 		Player local = client.getLocalPlayer();
 		WorldPoint pos = local != null ? local.getWorldLocation() : null;
-		boolean moved = pos != null && lastWorldPoint != null && !lastWorldPoint.equals(pos);
+		WorldPoint last = state.getLastWorldPoint();
+		boolean moved = pos != null && last != null && !last.equals(pos);
 		if (pos != null)
 		{
-			lastWorldPoint = pos;
+			state.setLastWorldPoint(pos);
 		}
 		RecordMode beforeMode = recorder.getMode();
-		recorder.onTick(tickIndex, activeProtectPrayers(), moved, config.recordArmTicks());
+		// Clamp the ARM window at the effective cycle length here, not by
+		// persisting back to config. Persisting would mean a hotkey cycle
+		// shrink → expand round-trip permanently destroys the user's setting.
+		int armTicks = Math.min(config.recordArmTicks(), cycleLength);
+		recorder.onTick(nextTick, buildTickEvents(), moved, armTicks);
 		RecordMode afterMode = recorder.getMode();
 		if (beforeMode != afterMode)
 		{
 			// ARM auto-exited to OFF; persist so the panel + config reflect it.
 			configManager.setConfiguration("chromatick", "recordMode", afterMode);
+		}
+
+		// Drain the HUD overlay's drag signal. render() may have detected an
+		// alt-drag and flagged it; flipping the persisted anchor target lives
+		// here so render stays free of state mutation.
+		if (hudOverlay.consumeUserDragged())
+		{
+			setHudAnchorTarget(HudAnchorTarget.NONE);
 		}
 	}
 
@@ -169,6 +188,90 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		return active;
 	}
 
+	/**
+	 * Build the list of {@link TickActionEvent}s captured this game tick.
+	 * Filters by the user's enabled categories — disabled categories never
+	 * make it into the buffer, so the recorder's storage and the HUD
+	 * timeline stay tight.
+	 *
+	 * <p>The captured click (if any) is always drained from the capture
+	 * service so the buffer doesn't carry stale state into the next tick,
+	 * even when the click's category isn't enabled.
+	 */
+	private List<TickActionEvent> buildTickEvents()
+	{
+		TickActionEvent click = capture.drainClick();
+		Set<TickActionCategory> enabled = enabledRecordCategories();
+		if (enabled.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		List<TickActionEvent> events = new ArrayList<>();
+		if (enabled.contains(TickActionCategory.PROTECTION_PRAYER))
+		{
+			for (Prayer p : activeProtectPrayers())
+			{
+				events.add(TickActionEvent.of(TickActionCategory.PROTECTION_PRAYER, p.ordinal()));
+			}
+		}
+		if (click != null && enabled.contains(click.category()))
+		{
+			events.add(click);
+		}
+		return events;
+	}
+
+	/**
+	 * Parse the {@code recordCategories} CSV config into a typed set.
+	 * Unknown names are silently skipped — keeps forward-compat if a
+	 * future build adds a category an older config string doesn't know.
+	 */
+	Set<TickActionCategory> enabledRecordCategories()
+	{
+		String csv = config.recordCategories();
+		if (csv == null || csv.isEmpty())
+		{
+			return EnumSet.noneOf(TickActionCategory.class);
+		}
+		EnumSet<TickActionCategory> set = EnumSet.noneOf(TickActionCategory.class);
+		for (String name : csv.split(","))
+		{
+			String trimmed = name.trim();
+			if (trimmed.isEmpty())
+			{
+				continue;
+			}
+			try
+			{
+				set.add(TickActionCategory.valueOf(trimmed));
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// unknown category — skip silently
+			}
+		}
+		return set;
+	}
+
+	void setRecordCategories(Set<TickActionCategory> categories)
+	{
+		StringBuilder sb = new StringBuilder();
+		// Use enum declaration order for stable CSV ordering — easier diffs
+		// and consistent serialization.
+		for (TickActionCategory c : TickActionCategory.values())
+		{
+			if (categories.contains(c))
+			{
+				if (sb.length() > 0)
+				{
+					sb.append(',');
+				}
+				sb.append(c.name());
+			}
+		}
+		configManager.setConfiguration("chromatick", "recordCategories", sb.toString());
+	}
+
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
@@ -179,12 +282,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		String key = event.getKey();
 		if ("cycleLength".equals(key))
 		{
-			cycleLengthOverride = -1;
-			clampRecordArmTicksToCycle();
+			state.clearCycleLengthOverride();
 		}
 		int cycleLength = getEffectiveCycleLength();
-		tickIndex = tickIndex % cycleLength;
-		currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(tickIndex);
+		int idx = state.getTickIndex() % cycleLength;
+		state.setTickIndex(idx);
+		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(idx));
 
 		if ("displayMode".equals(key))
 		{
@@ -204,7 +307,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 			|| "hudScale".equals(key) || "hudAnchorTarget".equals(key)
 			|| "hudVertical".equals(key)
 			|| "recordMode".equals(key) || "recordIconPosition".equals(key)
-			|| "recordArmTicks".equals(key))
+			|| "recordArmTicks".equals(key) || "recordCategories".equals(key))
 		{
 			// Active state changed — panel mirrors active state. hudAnchorTarget is
 			// here so the panel pill toggle flips to "None" when the overlay
@@ -243,8 +346,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		{
 			if (getCycleHotkeyByLength(n).matches(e))
 			{
-				cycleLengthOverride = n;
-				clampRecordArmTicksToCycle();
+				state.setCycleLengthOverride(n);
 				if (panel != null)
 				{
 					SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -255,10 +357,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 		if (config.resetCycleHotkey().matches(e))
 		{
-			cycleLengthOverride = -1;
-			tickIndex = 0;
-			currentColor = config.staticMode() ? config.staticColor() : getColorByIndex(0);
-			clampRecordArmTicksToCycle();
+			state.clearCycleLengthOverride();
+			state.setTickIndex(0);
+			state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
 			if (panel != null)
 			{
 				SwingUtilities.invokeLater(panel::refreshFromConfig);
@@ -271,13 +372,23 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	public int getEffectiveCycleLength()
 	{
-		return cycleLengthOverride > 0 ? cycleLengthOverride : config.cycleLength();
+		return state.effectiveCycleLength(config.cycleLength());
+	}
+
+	public int getTickIndex()
+	{
+		return state.getTickIndex();
+	}
+
+	public Color getCurrentColor()
+	{
+		return state.getCurrentColor();
 	}
 
 	/** Make {@code n} the active cycle, clearing any hotkey override. */
 	void setActiveCycle(int n)
 	{
-		cycleLengthOverride = -1;
+		state.clearCycleLengthOverride();
 		configManager.setConfiguration("chromatick", "cycleLength", PaletteService.clampCycle(n));
 	}
 
@@ -423,22 +534,12 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 
 	void setRecordArmTicks(int ticks)
 	{
-		int max = getEffectiveCycleLength();
-		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, Math.min(max, ticks)));
-	}
-
-	/**
-	 * If the current arm-ticks setting exceeds the effective cycle length
-	 * (e.g. user shrank the cycle from 10 to 4 with arm-ticks at 8), persist
-	 * a clamped value so the recorder and panel can't drift out of sync.
-	 */
-	private void clampRecordArmTicksToCycle()
-	{
-		int max = getEffectiveCycleLength();
-		if (config.recordArmTicks() > max)
-		{
-			configManager.setConfiguration("chromatick", "recordArmTicks", max);
-		}
+		// Floor at 1; do not clamp against the effective cycle length here —
+		// onGameTick clamps at the recorder feed site, so the persisted value
+		// can stay at the user's intent (e.g. 8) even while a hotkey shrinks
+		// the effective cycle (e.g. 4). When the cycle expands again the
+		// persisted value comes back without rewriting config.
+		configManager.setConfiguration("chromatick", "recordArmTicks", Math.max(1, ticks));
 	}
 
 	private void applyDisplayMode()
@@ -469,9 +570,15 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		}
 	}
 
-	ChromatickConfig getConfig()
+	/**
+	 * Immutable view-state for the sidebar panel. Captures all settings + the
+	 * runtime-resolved effective cycle length in a single read, so the panel
+	 * doesn't reach into config directly.
+	 */
+	ChromatickPanelSnapshot snapshot()
 	{
-		return config;
+		return ChromatickPanelSnapshot.from(config, getEffectiveCycleLength(),
+			enabledRecordCategories());
 	}
 
 	private Keybind getCycleHotkeyByLength(int n)
@@ -495,48 +602,5 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	{
 		Color[] palette = palettes.getCustomPaletteForCycle(getEffectiveCycleLength());
 		return palette[index % palette.length];
-	}
-
-	/**
-	 * Rewrite legacy lowercase string values for the four enum-typed config
-	 * keys (displayMode/hudGlyph/hudAnchorTarget/paletteMode) to their
-	 * uppercase enum names. Pre-1.0 the plugin stored these as raw lowercase
-	 * strings; once the getters return enums those raw values fail to
-	 * deserialize and silently snap to the default. Runs once per startUp;
-	 * already-migrated values are no-ops.
-	 */
-	private void migrateLegacyEnumValues()
-	{
-		migrateEnumKey("displayMode", DisplayMode.class);
-		migrateEnumKey("hudGlyph", HudGlyph.class);
-		migrateEnumKey("hudAnchorTarget", HudAnchorTarget.class);
-		migrateEnumKey("paletteMode", PaletteMode.class);
-	}
-
-	private <T extends Enum<T>> void migrateEnumKey(String key, Class<T> enumType)
-	{
-		String raw = configManager.getConfiguration("chromatick", key);
-		if (raw == null || raw.isEmpty())
-		{
-			return;
-		}
-		try
-		{
-			Enum.valueOf(enumType, raw);
-			return; // already in canonical form
-		}
-		catch (IllegalArgumentException ignored)
-		{
-			// fall through to migration attempt
-		}
-		try
-		{
-			T migrated = Enum.valueOf(enumType, raw.toUpperCase(java.util.Locale.ROOT));
-			configManager.setConfiguration("chromatick", key, migrated.name());
-		}
-		catch (IllegalArgumentException ignored)
-		{
-			// Unknown legacy value — leave it so RuneLite falls back to default.
-		}
 	}
 }

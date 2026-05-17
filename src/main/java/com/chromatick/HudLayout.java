@@ -1,14 +1,23 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
+
 /**
  * Pure layout math for the HUD metronome bar. Computes cell/glyph sizing,
  * spacing and bounding dimensions from raw config inputs so the geometry
  * can be unit-tested without a real overlay/render context.
  *
  * <p>Optionally reserves an icon band alongside the glyph row, used by the
- * per-tick prayer recorder. The band is only present in row layouts (i.e.
- * not cycle-in-place) and uses the cell size as its cross-axis thickness,
- * so icons stay proportional to the glyphs.
+ * per-tick recorder. The band is only present in row layouts (i.e. not
+ * cycle-in-place) and uses the cell size as its cross-axis thickness, so
+ * icons stay proportional to the glyphs.
+ *
+ * <p>When {@code comboLayout} is true, a <em>second</em> icon band is
+ * reserved on the opposite side of the glyph row. Combo events
+ * (ITEM_USE source + target) render their primary in the position
+ * {@link IconPosition} dictates and the secondary directly across the
+ * glyph row. Non-combo slots in a combo-capable layout simply leave the
+ * secondary band empty.
  *
  * <p>Orientation:
  * <ul>
@@ -33,13 +42,15 @@ final class HudLayout
 
 	/** True when an icon band is present (and large enough to render). */
 	final boolean showIcons;
-	/** Cross-axis thickness of the icon band in px; 0 when {@link #showIcons} is false. */
+	/** True when a second icon band is reserved on the opposite side of the glyph row. */
+	final boolean comboLayout;
+	/** Cross-axis thickness of one icon band in px; 0 when {@link #showIcons} is false. */
 	final int iconBandPx;
 	final IconPosition iconPosition;
 
 	private HudLayout(int cellSize, int baseGlyph, int gap, int slots,
 		boolean vertical, int totalWidth, int totalHeight,
-		boolean showIcons, int iconBandPx, IconPosition iconPosition)
+		boolean showIcons, boolean comboLayout, int iconBandPx, IconPosition iconPosition)
 	{
 		this.cellSize = cellSize;
 		this.baseGlyph = baseGlyph;
@@ -49,6 +60,7 @@ final class HudLayout
 		this.totalWidth = totalWidth;
 		this.totalHeight = totalHeight;
 		this.showIcons = showIcons;
+		this.comboLayout = comboLayout;
 		this.iconBandPx = iconBandPx;
 		this.iconPosition = iconPosition;
 	}
@@ -58,19 +70,30 @@ final class HudLayout
 		int cycleLength, boolean vertical, boolean cycleInPlace)
 	{
 		return compute(scalePct, popPct, spacingPx, cycleLength,
-			vertical, cycleInPlace, false, IconPosition.ABOVE);
+			vertical, cycleInPlace, false, IconPosition.ABOVE, false);
+	}
+
+	/** Bar with an optional icon band alongside the glyph row, no combo support. */
+	static HudLayout compute(int scalePct, int popPct, int spacingPx,
+		int cycleLength, boolean vertical, boolean cycleInPlace,
+		boolean wantIcons, IconPosition iconPosition)
+	{
+		return compute(scalePct, popPct, spacingPx, cycleLength,
+			vertical, cycleInPlace, wantIcons, iconPosition, false);
 	}
 
 	/**
-	 * Bar with an optional icon band alongside the glyph row.
+	 * Bar with an optional icon band, optionally combo-capable.
 	 *
 	 * <p>The icon band is only honored in row layouts — cycle-in-place mode
 	 * forces {@code showIcons=false} regardless of the {@code wantIcons}
 	 * argument (a single glyph has no timeline to align icons against).
+	 * Combo layout requires {@code showIcons} to be effective — when icons
+	 * are off, the combo flag is moot.
 	 */
 	static HudLayout compute(int scalePct, int popPct, int spacingPx,
 		int cycleLength, boolean vertical, boolean cycleInPlace,
-		boolean wantIcons, IconPosition iconPosition)
+		boolean wantIcons, IconPosition iconPosition, boolean comboCapable)
 	{
 		final float scale = clamp(scalePct, 50, 400) / 100f;
 		final float popFactor = 1f + clamp(popPct, 0, 200) / 100f;
@@ -84,22 +107,26 @@ final class HudLayout
 
 		// Icons need a timeline to align against — disable in cycle-in-place mode.
 		final boolean showIcons = wantIcons && !cycleInPlace;
+		final boolean comboLayout = showIcons && comboCapable;
 		final int iconBandPx = showIcons ? cellSize : 0;
+		final int totalIconPx = iconBandPx * (comboLayout ? 2 : (showIcons ? 1 : 0));
 
-		final int crossAxisLen = cellSize + iconBandPx;
+		final int crossAxisLen = cellSize + totalIconPx;
 		final int totalW = (vertical ? crossAxisLen : mainAxisLen) + 2 * MARGIN_PX;
 		final int totalH = (vertical ? mainAxisLen : crossAxisLen) + 2 * MARGIN_PX;
 
 		return new HudLayout(cellSize, baseGlyph, gap, slots, vertical,
-			totalW, totalH, showIcons, iconBandPx, iconPosition);
+			totalW, totalH, showIcons, comboLayout, iconBandPx, iconPosition);
 	}
 
 	/** X center of slot {@code k} relative to the overlay's top-left. */
 	int cellCenterX(int k)
 	{
 		int cellOffset = vertical ? 0 : k * (cellSize + gap);
-		int iconShift = (showIcons && vertical && iconPosition == IconPosition.ABOVE)
-			? iconBandPx : 0;
+		// Vertical mode shifts the glyph column right when an icon band sits
+		// on the left of the column. The "primary on left" case is iconPosition=ABOVE;
+		// in combo layout an icon band always sits on the left regardless of position.
+		int iconShift = (showIcons && vertical && hasIconOnLeftOrTop()) ? iconBandPx : 0;
 		return MARGIN_PX + iconShift + cellOffset + cellSize / 2;
 	}
 
@@ -107,8 +134,7 @@ final class HudLayout
 	int cellCenterY(int k)
 	{
 		int cellOffset = vertical ? k * (cellSize + gap) : 0;
-		int iconShift = (showIcons && !vertical && iconPosition == IconPosition.ABOVE)
-			? iconBandPx : 0;
+		int iconShift = (showIcons && !vertical && hasIconOnLeftOrTop()) ? iconBandPx : 0;
 		return MARGIN_PX + iconShift + cellOffset + cellSize / 2;
 	}
 
@@ -122,7 +148,7 @@ final class HudLayout
 		return active ? Math.max(baseGlyph, cellSize - 2) : baseGlyph;
 	}
 
-	/** X center of the icon for slot {@code k}, or -1 when no icon band is shown. */
+	/** X center of the primary icon for slot {@code k}, or -1 when no icon band is shown. */
 	int iconCenterX(int k)
 	{
 		if (!showIcons)
@@ -131,16 +157,16 @@ final class HudLayout
 		}
 		if (vertical)
 		{
-			// Icon column to the LEFT (ABOVE) or RIGHT (BELOW) of the glyph column.
+			// Primary icon column: ABOVE → left, BELOW → right.
 			return iconPosition == IconPosition.ABOVE
 				? MARGIN_PX + iconBandPx / 2
-				: MARGIN_PX + cellSize + iconBandPx / 2;
+				: MARGIN_PX + (comboLayout ? iconBandPx : 0) + cellSize + iconBandPx / 2;
 		}
-		// Horizontal: icons align with their tick column.
+		// Horizontal: primary icons align with their tick column.
 		return cellCenterX(k);
 	}
 
-	/** Y center of the icon for slot {@code k}, or -1 when no icon band is shown. */
+	/** Y center of the primary icon for slot {@code k}, or -1 when no icon band is shown. */
 	int iconCenterY(int k)
 	{
 		if (!showIcons)
@@ -149,19 +175,65 @@ final class HudLayout
 		}
 		if (vertical)
 		{
-			// Icons share the glyph row's Y in vertical mode.
+			// Horizontal axis split; primary shares the glyph row's Y.
 			return cellCenterY(k);
 		}
-		// Horizontal: icon row sits ABOVE or BELOW the glyph row.
+		// Primary band: ABOVE → top, BELOW → bottom.
 		return iconPosition == IconPosition.ABOVE
 			? MARGIN_PX + iconBandPx / 2
-			: MARGIN_PX + cellSize + iconBandPx / 2;
+			: MARGIN_PX + (comboLayout ? iconBandPx : 0) + cellSize + iconBandPx / 2;
+	}
+
+	/**
+	 * X center of the secondary (combo) icon for slot {@code k}, or -1 when
+	 * the layout isn't combo-capable. Lives on the opposite side of the
+	 * glyph row from the primary.
+	 */
+	int comboIconCenterX(int k)
+	{
+		if (!comboLayout)
+		{
+			return -1;
+		}
+		if (vertical)
+		{
+			// Secondary column: opposite side of primary.
+			return iconPosition == IconPosition.ABOVE
+				? MARGIN_PX + iconBandPx + cellSize + iconBandPx / 2
+				: MARGIN_PX + iconBandPx / 2;
+		}
+		return cellCenterX(k);
+	}
+
+	/** Y center of the secondary (combo) icon for slot {@code k}, or -1 when not combo-capable. */
+	int comboIconCenterY(int k)
+	{
+		if (!comboLayout)
+		{
+			return -1;
+		}
+		if (vertical)
+		{
+			return cellCenterY(k);
+		}
+		return iconPosition == IconPosition.ABOVE
+			? MARGIN_PX + iconBandPx + cellSize + iconBandPx / 2
+			: MARGIN_PX + iconBandPx / 2;
 	}
 
 	/** Icon side length in px, slightly inset within the band. */
 	int iconSize()
 	{
 		return showIcons ? Math.max(6, iconBandPx - 2) : 0;
+	}
+
+	/**
+	 * Whether an icon band sits to the left of (vertical) / above (horizontal)
+	 * the glyph row. True in combo layout always, or when iconPosition=ABOVE.
+	 */
+	private boolean hasIconOnLeftOrTop()
+	{
+		return comboLayout || iconPosition == IconPosition.ABOVE;
 	}
 
 	private static int clamp(int v, int lo, int hi)

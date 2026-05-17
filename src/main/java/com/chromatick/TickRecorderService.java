@@ -1,17 +1,23 @@
 package com.chromatick;
 
+import com.chromatick.Enums.*;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import javax.inject.Singleton;
-import net.runelite.api.Prayer;
 
 /**
- * Per-tick prayer log for the HUD timeline. State container only — the
- * plugin feeds it active prayers and movement signals each game tick;
- * the HUD overlay reads back per-tick {@link Prayer} sets when rendering.
+ * Per-tick recording log for the HUD timeline. State container only — the
+ * plugin feeds it the categorized events captured this tick plus a movement
+ * signal; the HUD overlay reads back what was recorded at each
+ * tick-in-cycle when rendering.
+ *
+ * <p>Payload is a list of {@link TickActionEvent}s, one per category that
+ * fired this tick. Currently only PROTECTION_PRAYER events are emitted by
+ * the plugin; the upcoming capture service will add click / item-use /
+ * movement events without changing this service.
  *
  * <p>Mode semantics:
  * <ul>
@@ -39,9 +45,9 @@ import net.runelite.api.Prayer;
  * and will be overwritten as new ticks come around.
  */
 @Singleton
-class PrayerRecorderService
+class TickRecorderService
 {
-	private final Map<Integer, EnumSet<Prayer>> store = new HashMap<>();
+	private final Map<Integer, List<TickActionEvent>> store = new HashMap<>();
 
 	private RecordMode mode = RecordMode.OFF;
 	private int armRemaining = 0;
@@ -77,20 +83,21 @@ class PrayerRecorderService
 	/**
 	 * Capture (or skip) the current tick. Called once per {@code GameTick}.
 	 *
-	 * @param tickIndex     position in the cycle, 0-based
-	 * @param activePrayers protect prayers that were active this tick
-	 * @param moved         player moved between last tick and this one
-	 * @param armTicks      configured ARM window length (1..10); only used
-	 *                      when {@code mode == ARM}
+	 * @param tickIndex position in the cycle, 0-based
+	 * @param events    categorized events the plugin observed this tick;
+	 *                  may be empty
+	 * @param moved     player moved between last tick and this one
+	 * @param armTicks  configured ARM window length (1..10); only used
+	 *                  when {@code mode == ARM}
 	 */
-	void onTick(int tickIndex, Set<Prayer> activePrayers, boolean moved, int armTicks)
+	void onTick(int tickIndex, List<TickActionEvent> events, boolean moved, int armTicks)
 	{
 		switch (mode)
 		{
 			case OFF:
 				return;
 			case ALWAYS:
-				capture(tickIndex, activePrayers);
+				capture(tickIndex, events);
 				return;
 			case ARM:
 				if (moved)
@@ -99,7 +106,7 @@ class PrayerRecorderService
 				}
 				if (armRemaining > 0)
 				{
-					capture(tickIndex, activePrayers);
+					capture(tickIndex, events);
 					armRemaining--;
 					if (armRemaining == 0)
 					{
@@ -113,17 +120,19 @@ class PrayerRecorderService
 		}
 	}
 
-	/** True if the buffer holds at least one tick's worth of recorded prayers. */
+	/** True if the buffer holds at least one tick's worth of recorded payload. */
 	boolean hasCaptures()
 	{
 		return !store.isEmpty();
 	}
 
-	/** Prayers captured at this tick-in-cycle, or an empty set if none. */
-	Set<Prayer> getPrayersAtTick(int tickIndex)
+	/**
+	 * Recorded payload at this tick-in-cycle, or {@link RecordedTick#EMPTY}
+	 * if nothing was captured at that slot.
+	 */
+	RecordedTick getRecordedAt(int tickIndex)
 	{
-		EnumSet<Prayer> captured = store.get(tickIndex);
-		return captured != null ? Collections.unmodifiableSet(captured) : Collections.emptySet();
+		return RecordedTick.of(store.get(tickIndex));
 	}
 
 	/** Forget everything. Called on entering OFF, on shutdown, and on demand. */
@@ -133,11 +142,12 @@ class PrayerRecorderService
 		armRemaining = 0;
 	}
 
-	private void capture(int tickIndex, Set<Prayer> activePrayers)
+	private void capture(int tickIndex, List<TickActionEvent> events)
 	{
-		EnumSet<Prayer> snapshot = activePrayers.isEmpty()
-			? EnumSet.noneOf(Prayer.class)
-			: EnumSet.copyOf(activePrayers);
-		store.put(tickIndex, snapshot);
+		// Defensive copy so the caller can reuse its list. Events themselves
+		// are immutable, so a shallow copy of the references is sufficient.
+		store.put(tickIndex, events == null || events.isEmpty()
+			? Collections.emptyList()
+			: Collections.unmodifiableList(new ArrayList<>(events)));
 	}
 }
