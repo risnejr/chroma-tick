@@ -54,6 +54,7 @@ class RecordedIconResolver
 	private volatile BufferedImage spriteMelee;
 	private volatile BufferedImage spriteMissiles;
 	private volatile BufferedImage spriteMagic;
+	private volatile BufferedImage spriteInventory;
 	private boolean requested = false;
 
 	// Cross-sprite cache. Populated lazily on first render that needs them
@@ -73,6 +74,9 @@ class RecordedIconResolver
 	 * Trigger the async sprite load. Idempotent — the first call kicks off
 	 * the SpriteManager fetches, subsequent calls are no-ops. Cheap enough
 	 * to call once per render frame.
+	 *
+	 * <p>Loads three protect-prayer sprites (HUD rendering) and the
+	 * inventory tab sprite (panel category-pill icon for ITEM_USE).
 	 */
 	void ensureLoaded()
 	{
@@ -84,6 +88,43 @@ class RecordedIconResolver
 		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MELEE,    0, img -> spriteMelee    = img);
 		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MISSILES, 0, img -> spriteMissiles = img);
 		spriteManager.getSpriteAsync(SpriteID.Prayeron.PROTECT_FROM_MAGIC,    0, img -> spriteMagic    = img);
+		spriteManager.getSpriteAsync(SpriteID.SideIcons.INVENTORY,            0, img -> spriteInventory = img);
+	}
+
+	/**
+	 * Representative icon for a category, used by the settings panel's
+	 * capture-category pill row. Returns {@code null} when the sprite
+	 * hasn't loaded yet — callers should show a placeholder and rely on
+	 * subsequent repaints picking up the loaded image.
+	 *
+	 * <p>Distinct from the per-event HUD rendering: ITEM_USE in the HUD
+	 * draws the actual source item sprite (knife, herb, etc.), but the
+	 * panel pill needs a stable abstract icon — the inventory backpack.
+	 */
+	BufferedImage categoryIcon(TickActionCategory category)
+	{
+		ensureLoaded();
+		switch (category)
+		{
+			case PROTECTION_PRAYER:
+				return spriteMelee;
+			case ITEM_USE:
+				return spriteInventory;
+			case RED_CLICK:
+				if (crossRed == null)
+				{
+					crossRed = loadCrossSprite(RED_CROSS_INDEX);
+				}
+				return crossRed;
+			case YELLOW_CLICK:
+				if (crossYellow == null)
+				{
+					crossYellow = loadCrossSprite(YELLOW_CROSS_INDEX);
+				}
+				return crossYellow;
+			default:
+				return null;
+		}
 	}
 
 	/**

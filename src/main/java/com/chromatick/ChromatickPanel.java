@@ -20,9 +20,11 @@ import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -60,6 +62,7 @@ class ChromatickPanel extends PluginPanel
 
 	private final ChromatickPlugin plugin;
 	private final PaletteService palettes;
+	private final RecordedIconResolver iconResolver;
 
 	// Mode toggle
 	private final PillToggle modeToggle;
@@ -133,10 +136,15 @@ class ChromatickPanel extends PluginPanel
 	private final JSlider    recordArmTicksSlider;
 	private final JLabel     recordArmTicksValueLabel;
 	private final RecordModeDot recordModeDot;
-	private final JCheckBox  capturePrayerBox;
-	private final JCheckBox  captureItemUseBox;
-	private final JCheckBox  captureRedClickBox;
-	private final JCheckBox  captureYellowClickBox;
+	private final IconPillRow captureCategoryPills;
+
+	/** Category order shown in the capture pill row (matches enum order). */
+	private static final TickActionCategory[] CAPTURE_CATEGORIES = {
+		TickActionCategory.PROTECTION_PRAYER,
+		TickActionCategory.ITEM_USE,
+		TickActionCategory.RED_CLICK,
+		TickActionCategory.YELLOW_CLICK,
+	};
 
 	private int  selectedCycle;
 	private Slot editing;
@@ -152,10 +160,11 @@ class ChromatickPanel extends PluginPanel
 	 */
 	private boolean suppressArmTicksListener = false;
 
-	ChromatickPanel(ChromatickPlugin plugin, PaletteService palettes)
+	ChromatickPanel(ChromatickPlugin plugin, PaletteService palettes, RecordedIconResolver iconResolver)
 	{
 		this.plugin = plugin;
 		this.palettes = palettes;
+		this.iconResolver = iconResolver;
 
 		// One read of plugin state, used throughout widget construction and the
 		// "Initial state" block below. Subsequent updates flow through
@@ -591,10 +600,12 @@ class ChromatickPanel extends PluginPanel
 		recordIconPositionToggle = new PillToggle(new String[]{"Above", "Below"});
 		recordArmTicksSlider     = themedSlider(1, 10);
 		recordArmTicksValueLabel = compactValueLabel();
-		capturePrayerBox         = themedCheckBox();
-		captureItemUseBox        = themedCheckBox();
-		captureRedClickBox       = themedCheckBox();
-		captureYellowClickBox    = themedCheckBox();
+		captureCategoryPills     = new IconPillRow(CAPTURE_CATEGORIES, new String[]{
+			"Capture the active Protect-from prayer each tick",
+			"Capture use-on-X clicks (knife on log, herb on tar, etc.)",
+			"Capture world clicks where the cursor was red (actionable)",
+			"Capture world clicks where the cursor was yellow (walk-here)",
+		});
 
 		// Mode pill — Off / Arm / Always — with a colored status dot mirroring
 		// the on-HUD indicator so users can see what the dot color means.
@@ -631,29 +642,17 @@ class ChromatickPanel extends PluginPanel
 		recordArmTicksSlider.setToolTipText(
 			"Ticks captured per ARM trigger (movement tick + N-1 more). Right-click to reset.");
 
-		// Capture-category checkboxes — what kind of events the recorder
-		// actually picks up. Each maps 1:1 to a TickActionCategory.
-		capturePrayerBox.setToolTipText("Capture the active Protect-from prayer each tick");
-		captureItemUseBox.setToolTipText("Capture use-on-X clicks (knife on log, herb on tar, etc.)");
-		captureRedClickBox.setToolTipText("Capture clicks where the cursor was red (attack-type)");
-		captureYellowClickBox.setToolTipText(
-			"Capture any other click — the cursor was yellow (walk-here, interact, etc.)");
-		capturePrayerBox.addActionListener(e ->
-			toggleRecordCategory(TickActionCategory.PROTECTION_PRAYER, capturePrayerBox.isSelected()));
-		captureItemUseBox.addActionListener(e ->
-			toggleRecordCategory(TickActionCategory.ITEM_USE, captureItemUseBox.isSelected()));
-		captureRedClickBox.addActionListener(e ->
-			toggleRecordCategory(TickActionCategory.RED_CLICK, captureRedClickBox.isSelected()));
-		captureYellowClickBox.addActionListener(e ->
-			toggleRecordCategory(TickActionCategory.YELLOW_CLICK, captureYellowClickBox.isSelected()));
+		// Capture-category pill row — which event kinds the recorder picks
+		// up. Each pill toggles a TickActionCategory. The listener writes
+		// back via plugin.setRecordCategories using a fresh set each time
+		// to avoid TOCTOU with concurrent ConfigChanged events.
+		captureCategoryPills.setListener((category, enabled) ->
+			toggleRecordCategory(category, enabled));
 
 		hudBody.add(subgroupLabelRow("Recorder"));
 		hudBody.add(Box.createVerticalStrut(2));
 		hudBody.add(modeRowWithDot("Mode", recordModeToggle, recordModeDot));
-		hudBody.add(labeledCheckBoxRow("Prayer",       capturePrayerBox));
-		hudBody.add(labeledCheckBoxRow("Item use",     captureItemUseBox));
-		hudBody.add(labeledCheckBoxRow("Red click",    captureRedClickBox));
-		hudBody.add(labeledCheckBoxRow("Yellow click", captureYellowClickBox));
+		hudBody.add(labeledToggleRow("Capture", captureCategoryPills));
 		hudBody.add(labeledToggleRow("Icons", recordIconPositionToggle));
 		hudBody.add(labeledSliderRow("Arm length", recordArmTicksSlider, recordArmTicksValueLabel));
 
@@ -716,7 +715,7 @@ class ChromatickPanel extends PluginPanel
 		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
-		applyCaptureCheckboxes(s.recordCategories);
+		applyCaptureCategoryPills(s.recordCategories);
 
 		selectedCycle = PaletteService.clampCycle(s.effectiveCycleLength);
 		applyModeVisibility(s.staticMode);
@@ -758,16 +757,16 @@ class ChromatickPanel extends PluginPanel
 	}
 
 	/**
-	 * Sync the four capture-category checkboxes to the snapshot's set.
-	 * Uses {@code setSelected} which doesn't fire ActionListeners, so this
-	 * is safe to call from refresh without listener-suppression dance.
+	 * Sync the capture-category pill row to the snapshot's set. The pill
+	 * setSelected paths bypass the click listener, so this is safe to
+	 * call from refresh without a listener-suppression dance.
 	 */
-	private void applyCaptureCheckboxes(java.util.Set<TickActionCategory> categories)
+	private void applyCaptureCategoryPills(java.util.Set<TickActionCategory> categories)
 	{
-		capturePrayerBox.setSelected(categories.contains(TickActionCategory.PROTECTION_PRAYER));
-		captureItemUseBox.setSelected(categories.contains(TickActionCategory.ITEM_USE));
-		captureRedClickBox.setSelected(categories.contains(TickActionCategory.RED_CLICK));
-		captureYellowClickBox.setSelected(categories.contains(TickActionCategory.YELLOW_CLICK));
+		for (TickActionCategory cat : CAPTURE_CATEGORIES)
+		{
+			captureCategoryPills.setSelected(cat, categories.contains(cat));
+		}
 	}
 
 	/**
@@ -942,7 +941,7 @@ class ChromatickPanel extends PluginPanel
 		}
 		recordArmTicksSlider.setEnabled(s.recordMode == RecordMode.ARM);
 		recordArmTicksValueLabel.setEnabled(s.recordMode == RecordMode.ARM);
-		applyCaptureCheckboxes(s.recordCategories);
+		applyCaptureCategoryPills(s.recordCategories);
 	}
 
 	void onPaletteChanged(int cycleN)
@@ -1245,7 +1244,7 @@ class ChromatickPanel extends PluginPanel
 		return row;
 	}
 
-	private JPanel labeledToggleRow(String text, PillToggle toggle)
+	private JPanel labeledToggleRow(String text, JComponent toggle)
 	{
 		JPanel row = new JPanel(new BorderLayout(4, 0));
 		row.setBackground(getBackground());
@@ -1263,7 +1262,7 @@ class ChromatickPanel extends PluginPanel
 	/** Toggle row with a colored status dot anchored on the right. */
 	private JPanel modeRowWithDot(String text, PillToggle toggle, RecordModeDot dot)
 	{
-		JPanel row = labeledToggleRow(text, toggle);
+		JPanel row = labeledToggleRow(text, (JComponent) toggle);
 		row.add(dot, BorderLayout.EAST);
 		return row;
 	}
@@ -1786,6 +1785,151 @@ class ChromatickPanel extends PluginPanel
 				pills.get(j).repaint();
 			}
 			repaint();
+		}
+	}
+
+	// ─── Multi-select icon pill row (capture categories) ────────────────
+
+	/**
+	 * Multi-select pill row whose pills render icons instead of text. Used
+	 * for the recorder's capture-category selector — each pill maps to a
+	 * {@link TickActionCategory} and toggles independently.
+	 *
+	 * <p>Icons come from {@link RecordedIconResolver#categoryIcon} which
+	 * loads game sprites lazily. Until a sprite finishes loading the pill
+	 * shows a small placeholder dot; subsequent paint cycles pick up the
+	 * loaded image automatically — no callback wiring needed.
+	 *
+	 * <p>Same visual track + rounded-rect selection treatment as
+	 * {@link PillToggle}, so the two widgets look like siblings in the
+	 * Recorder block.
+	 */
+	private class IconPillRow extends JPanel
+	{
+		private static final int PILL_HEIGHT = 22;
+		private static final int ICON_SIZE   = 16;
+
+		private final TickActionCategory[] categories;
+		private final IconPill[] pills;
+		private BiConsumer<TickActionCategory, Boolean> listener;
+
+		IconPillRow(TickActionCategory[] categories, String[] tooltips)
+		{
+			this.categories = categories;
+			this.pills = new IconPill[categories.length];
+			setLayout(new GridLayout(1, categories.length, 2, 0));
+			setOpaque(false);
+			setBorder(new EmptyBorder(2, 2, 2, 2));
+			setMinimumSize(new Dimension(0, PILL_HEIGHT));
+			setMaximumSize(new Dimension(Integer.MAX_VALUE, PILL_HEIGHT));
+			for (int i = 0; i < categories.length; i++)
+			{
+				pills[i] = new IconPill(categories[i]);
+				if (tooltips != null && i < tooltips.length)
+				{
+					pills[i].setToolTipText(tooltips[i]);
+				}
+				add(pills[i]);
+			}
+		}
+
+		void setSelected(TickActionCategory cat, boolean selected)
+		{
+			for (int i = 0; i < categories.length; i++)
+			{
+				if (categories[i] == cat)
+				{
+					pills[i].selected = selected;
+					pills[i].repaint();
+					return;
+				}
+			}
+		}
+
+		void setListener(BiConsumer<TickActionCategory, Boolean> l)
+		{
+			this.listener = l;
+		}
+
+		@Override
+		public Dimension getPreferredSize()
+		{
+			Dimension d = super.getPreferredSize();
+			return new Dimension(d.width, PILL_HEIGHT);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setColor(TRACK_BG);
+			g2.fillRoundRect(0, 0, getWidth(), getHeight(), 6, 6);
+			g2.dispose();
+		}
+
+		/** One pill in the row — its icon comes from the category and its selected state is independent. */
+		private class IconPill extends JComponent
+		{
+			final TickActionCategory category;
+			boolean selected = false;
+
+			IconPill(TickActionCategory category)
+			{
+				this.category = category;
+				setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+				addMouseListener(new MouseAdapter()
+				{
+					@Override
+					public void mousePressed(MouseEvent e)
+					{
+						selected = !selected;
+						repaint();
+						if (listener != null)
+						{
+							listener.accept(category, selected);
+						}
+					}
+				});
+			}
+
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				Graphics2D g2 = (Graphics2D) g.create();
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+				if (selected)
+				{
+					g2.setColor(ColorScheme.BRAND_ORANGE);
+					g2.fillRoundRect(0, 0, getWidth(), getHeight(), 4, 4);
+				}
+
+				BufferedImage icon = iconResolver.categoryIcon(category);
+				int cx = getWidth() / 2;
+				int cy = getHeight() / 2;
+				if (icon != null)
+				{
+					// Faded when unselected so the active pills stand out without
+					// the orange chip alone carrying the entire signal.
+					if (!selected)
+					{
+						g2.setComposite(AlphaComposite.getInstance(
+							AlphaComposite.SRC_OVER, 0.55f));
+					}
+					g2.drawImage(icon, cx - ICON_SIZE / 2, cy - ICON_SIZE / 2,
+						ICON_SIZE, ICON_SIZE, null);
+				}
+				else
+				{
+					// Sprite not loaded yet — a small placeholder dot until the
+					// next repaint catches the async load.
+					g2.setColor(selected ? Color.BLACK : ColorScheme.LIGHT_GRAY_COLOR);
+					g2.fillOval(cx - 4, cy - 4, 8, 8);
+				}
+
+				g2.dispose();
+			}
 		}
 	}
 

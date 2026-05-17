@@ -78,6 +78,9 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 	private ChromatickHudOverlay hudOverlay;
 
 	@Inject
+	private RecordedIconResolver iconResolver;
+
+	@Inject
 	private OverlayManager overlayManager;
 
 	@Inject
@@ -106,7 +109,7 @@ public class ChromatickPlugin extends Plugin implements KeyListener
 		recorder.setMode(config.recordMode());
 		state.setCurrentColor(config.staticMode() ? config.staticColor() : getColorByIndex(0));
 
-		panel = new ChromatickPanel(this, palettes);
+		panel = new ChromatickPanel(this, palettes, iconResolver);
 		navButton = NavigationButton.builder()
 			.tooltip("ChromaTick")
 			.icon(ImageUtil.loadImageResource(getClass(), "icon.png"))
